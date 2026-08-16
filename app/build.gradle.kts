@@ -70,6 +70,9 @@ dependencies {
     // Image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // Markdown Renderer (Compose Material 3)
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.28.0")
+
     // Network & JSON
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")

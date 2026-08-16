@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ExpandLess
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,6 +60,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -159,6 +164,8 @@ fun ChatBubble(
             }
         }
 
+        var isRawMode by remember { mutableStateOf(false) }
+
         Column(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
             modifier = Modifier.widthIn(max = 340.dp)
@@ -198,35 +205,75 @@ fun ChatBubble(
                     .padding(12.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Agent Name on Top of Bubble (if Agent message)
-                    if (!isUser) {
+                    // Header Bar with Agent Name (or User label), Preview/Raw Toggle, and Copy
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (isUser) "You" else agentProfile.name,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = if (isUser) AccentViolet else AccentCyan
+                        )
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = agentProfile.name,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = AccentCyan
-                            )
+                            // Markdown Toggle Pill (Preview vs Raw)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isRawMode) AccentViolet.copy(alpha = 0.25f) else SurfaceElevated)
+                                    .border(
+                                        1.dp,
+                                        if (isRawMode) AccentViolet else BorderSubtle,
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { isRawMode = !isRawMode }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isRawMode) Icons.Default.Code else Icons.Default.Visibility,
+                                        contentDescription = if (isRawMode) "Raw Markdown" else "Rendered Preview",
+                                        tint = if (isRawMode) AccentViolet else AccentCyan,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Text(
+                                        text = if (isRawMode) "RAW" else "PREVIEW",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = if (isRawMode) AccentViolet else TextSecondary
+                                    )
+                                }
+                            }
 
+                            // Contextual Copy Button (Copies Rendered text or Raw Markdown based on toggle)
                             IconButton(
                                 onClick = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = ClipData.newPlainText("Agent Response", message.content)
+                                    val textToCopy = if (isRawMode) message.content else stripMarkdownForPlainCopy(message.content)
+                                    val clip = ClipData.newPlainText("Herdr Message", textToCopy)
                                     clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Copied response to clipboard", Toast.LENGTH_SHORT).show()
+                                    val toastMsg = if (isRawMode) "Copied raw markdown" else "Copied rendered preview"
+                                    Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                                 },
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "Copy",
                                     tint = TextMuted,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
@@ -283,6 +330,7 @@ fun ChatBubble(
                     if (message.content.isNotBlank()) {
                         MarkdownMessageText(
                             text = message.content,
+                            isRawMode = isRawMode,
                             isStreaming = message.status == MessageStatus.STREAMING
                         )
                     }
@@ -655,9 +703,9 @@ fun ToolExecutionCard(tool: ToolExecution) {
 @Composable
 fun MarkdownMessageText(
     text: String,
+    isRawMode: Boolean,
     isStreaming: Boolean
 ) {
-    val context = LocalContext.current
     val infiniteTransition = rememberInfiniteTransition(label = "cursor")
     val cursorAlpha by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -669,105 +717,52 @@ fun MarkdownMessageText(
         label = "cursorAlpha"
     )
 
-    // Parse simple code blocks and regular paragraphs
-    val parts = remember(text) {
-        val list = mutableListOf<String>()
-        val lines = text.split("\n")
-        var inCodeBlock = false
-        var currentBlock = StringBuilder()
-
-        for (line in lines) {
-            if (line.startsWith("```")) {
-                if (inCodeBlock) {
-                    currentBlock.append(line)
-                    list.add(currentBlock.toString())
-                    currentBlock = StringBuilder()
-                    inCodeBlock = false
-                } else {
-                    if (currentBlock.isNotEmpty()) {
-                        list.add(currentBlock.toString())
-                        currentBlock = StringBuilder()
-                    }
-                    currentBlock.append(line).append("\n")
-                    inCodeBlock = true
-                }
-            } else {
-                currentBlock.append(line).append("\n")
-            }
-        }
-        if (currentBlock.isNotEmpty()) {
-            list.add(currentBlock.toString())
-        }
-        list
-    }
-
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        parts.forEach { part ->
-            if (part.startsWith("```")) {
-                // Code Block Container
-                val codeContent = part
-                    .substringAfter("\n")
-                    .substringBeforeLast("```")
-                    .trimEnd()
-
-                val language = part.lines().firstOrNull()?.removePrefix("```")?.trim() ?: "code"
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(CodeBackground)
-                        .border(1.dp, CodeBorder, RoundedCornerShape(8.dp))
-                        .padding(8.dp)
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = language.ifBlank { "code" },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextMuted
-                            )
-                            IconButton(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = ClipData.newPlainText("Code", codeContent)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(18.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Copy code",
-                                    tint = TextMuted,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = codeContent,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.5.sp,
-                                lineHeight = 19.sp
-                            ),
-                            color = TextHighlight
-                        )
-                    }
-                }
-            } else {
-                // Regular Text
+        if (isRawMode) {
+            // Raw Markdown Monospace Block
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CodeBackground)
+                    .border(1.dp, CodeBorder, RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
                 Text(
-                    text = part.trimEnd(),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 24.sp),
-                    color = TextPrimary
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp
+                    ),
+                    color = TextHighlight
                 )
             }
+        } else {
+            // Rendered Markdown View using mikepenz multiplatform-markdown-renderer-m3
+            Markdown(
+                content = text,
+                colors = markdownColor(
+                    text = TextPrimary,
+                    codeText = TextHighlight,
+                    linkText = AccentCyan,
+                    codeBackground = CodeBackground,
+                    inlineCodeBackground = CodeBackground,
+                    dividerColor = BorderSubtle
+                ),
+                typography = markdownTypography(
+                    text = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 24.sp),
+                    code = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp
+                    ),
+                    h1 = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = AccentCyan),
+                    h2 = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = AccentViolet),
+                    h3 = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TextPrimary)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         if (isStreaming) {
@@ -778,4 +773,19 @@ fun MarkdownMessageText(
             )
         }
     }
+}
+
+/**
+ * Strips markdown syntax (headers, code fences, asterisks, links) to provide clean text when copying rendered preview.
+ */
+fun stripMarkdownForPlainCopy(raw: String): String {
+    return raw
+        .replace(Regex("```[a-zA-Z0-9_-]*\\n?"), "")
+        .replace("```", "")
+        .replace(Regex("^#{1,6}\\s+", RegexOption.MULTILINE), "")
+        .replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1")
+        .replace(Regex("\\*([^*]+)\\*"), "$1")
+        .replace(Regex("`([^`]+)`"), "$1")
+        .replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
+        .trim()
 }
