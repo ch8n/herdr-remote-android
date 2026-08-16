@@ -145,6 +145,8 @@ To have the bridge start automatically on macOS login without running terminal c
 
 ---
 
+---
+
 ### 📱 Connecting the Android App
 
 1. Open **Settings** (⚙️ top right in the Android app).
@@ -157,6 +159,40 @@ To have the bridge start automatically on macOS login without running terminal c
    - All active desktop tabs and agent names will appear in the top tab bar.
    - Live stdout/stderr terminal streams and AI responses will stream in real time.
    - Switching, opening, or closing tabs on the phone automatically mirrors on your desktop.
+
+---
+
+### 🌐 Mini Tailscale Setup Guide (Remote Access from Anywhere)
+
+[Tailscale](https://tailscale.com) creates a secure, encrypted WireGuard mesh VPN between your Mac and Android phone, allowing you to control your desktop agents from cellular data or outside networks with zero port forwarding.
+
+#### 1. Setup on Mac (Host)
+1. Install Tailscale:
+   ```bash
+   brew install --cask tailscale
+   # Or download from https://tailscale.com/download/mac
+   ```
+2. Open Tailscale, log in, and find your Mac's 100.x Tailscale IP:
+   ```bash
+   tailscale ip -4
+   # Example output: 100.122.158.96
+   ```
+
+#### 2. Setup on Android (Phone)
+1. Install **Tailscale** from the [Google Play Store](https://play.google.com/store/apps/details?id=com.tailscale.ipn).
+2. Sign in with the **same account** used on your Mac and toggle the VPN switch to **Active**.
+3. Tap on your Mac's node in the list to verify connectivity.
+
+#### 3. Connect in Herdr Remote App
+1. Open **Herdr Remote** on your phone.
+2. Tap **Settings (⚙️)**.
+3. Paste the WebSocket URL using your Mac's Tailscale IP or MagicDNS hostname:
+   ```text
+   ws://100.122.158.96:8765
+   ```
+4. Tap **Save Preferences**. You are now securely connected anywhere in the world!
+
+---
 
 ---
 
