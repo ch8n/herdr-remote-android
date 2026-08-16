@@ -537,13 +537,13 @@ fun ChatScreen(
                         }
                     }
 
-                    // Main Input Controls Row with generous 8.dp spacing and margins
+                    // Main Input Controls Row with generous spacing and margins between all buttons
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 2.dp),
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         // Attachment Plus Button
                         IconButton(
