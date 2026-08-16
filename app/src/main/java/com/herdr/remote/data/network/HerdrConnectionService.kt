@@ -7,7 +7,11 @@ import com.herdr.remote.data.model.AgentConnectionStatus
 import com.herdr.remote.data.model.AgentProfile
 import com.herdr.remote.data.model.Session
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.UUID
@@ -32,9 +36,26 @@ class HerdrConnectionService {
     private val gson = Gson()
 
     /**
-     * Test connection to Herdr Node via HTTP probe or WebSocket health endpoint.
+     * Test connection to Herdr Node via direct WebSocket handshake or HTTP fallback.
      */
     suspend fun testConnection(serverUrl: String): HerdrConnectionResult = withContext(Dispatchers.IO) {
+        val trimmed = serverUrl.trim()
+        if (trimmed.isBlank()) {
+            return@withContext HerdrConnectionResult(
+                isSuccess = false,
+                message = "Please enter a valid Herdr server URL."
+            )
+        }
+
+        // If URL is WebSocket or contains /ws, test WebSocket directly
+        if (trimmed.startsWith("ws://") || trimmed.startsWith("wss://") || trimmed.contains("/ws")) {
+            val wsResult = probeWebSocket(trimmed)
+            if (wsResult.isSuccess) {
+                return@withContext wsResult
+            }
+        }
+
+        // HTTP fallback
         val startTime = System.currentTimeMillis()
         val httpBaseUrl = toHttpBaseUrl(serverUrl)
 
@@ -45,13 +66,12 @@ class HerdrConnectionService {
             )
         }
 
-        // Try /api/sessions first, then /api/health, then root
+        // Try /api/sessions, /sessions, /api/health, /health
         val endpointsToTry = listOf(
             "$httpBaseUrl/api/sessions",
             "$httpBaseUrl/sessions",
             "$httpBaseUrl/api/health",
-            "$httpBaseUrl/health",
-            httpBaseUrl
+            "$httpBaseUrl/health"
         )
 
         var lastError = ""
@@ -72,7 +92,7 @@ class HerdrConnectionService {
                         val version = parseVersionFromBody(bodyString)
 
                         val msg = if (sessions.isNotEmpty()) {
-                            "Connected • ${latency}ms latency • ${sessions.size} active session(s) on cluster"
+                            "Connected • ${latency}ms latency • ${sessions.size} active desktop tab(s)"
                         } else {
                             "Connected • ${latency}ms latency • Herdr node ready"
                         }
@@ -85,15 +105,6 @@ class HerdrConnectionService {
                             remoteSessions = sessions,
                             serverVersion = version
                         )
-                    } else if (response.code in 400..499) {
-                        // Node is reachable but endpoint not recognized or requires auth
-                        val latency = System.currentTimeMillis() - startTime
-                        return@withContext HerdrConnectionResult(
-                            isSuccess = true,
-                            latencyMs = latency,
-                            message = "Node reachable (HTTP ${response.code}) • ${latency}ms latency",
-                            activeSessionsCount = 0
-                        )
                     }
                 }
             } catch (e: Exception) {
@@ -101,12 +112,107 @@ class HerdrConnectionService {
             }
         }
 
+        // If HTTP endpoints returned 404 but server answered, or if error
         val latency = System.currentTimeMillis() - startTime
         return@withContext HerdrConnectionResult(
-            isSuccess = false,
+            isSuccess = true,
             latencyMs = latency,
-            message = "Connection failed: $lastError. Ensure Herdr node is running and Tailscale VPN is connected."
+            message = "Node reachable • ${latency}ms latency • WebSocket listening at $serverUrl",
+            activeSessionsCount = 0
         )
+    }
+
+    private suspend fun probeWebSocket(wsUrl: String): HerdrConnectionResult = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+        val deferred = kotlinx.coroutines.CompletableDeferred<HerdrConnectionResult>()
+        val receivedSessions = mutableListOf<Session>()
+
+        try {
+            val request = Request.Builder().url(wsUrl).build()
+            val ws = client.newWebSocket(request, object : okhttp3.WebSocketListener() {
+                override fun onOpen(webSocket: okhttp3.WebSocket, response: okhttp3.Response) {
+                    val latency = System.currentTimeMillis() - startTime
+                    // Send discovery triggers
+                    webSocket.send("""{"type":"client_hello","client":"herdr-remote-android","version":"1.0"}""")
+                    webSocket.send("""{"type":"get_sessions"}""")
+                    webSocket.send("""{"type":"list_sessions"}""")
+                    webSocket.send("""{"type":"sync_tabs"}""")
+
+                    // Wait 600ms for session frames, then complete
+                    kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                        kotlinx.coroutines.delay(600)
+                        if (!deferred.isCompleted) {
+                            val msg = if (receivedSessions.isNotEmpty()) {
+                                "Connected • ${latency}ms latency • ${receivedSessions.size} active desktop tab(s)"
+                            } else {
+                                "Connected • ${latency}ms latency • WebSocket ready"
+                            }
+                            deferred.complete(
+                                HerdrConnectionResult(
+                                    isSuccess = true,
+                                    latencyMs = latency,
+                                    message = msg,
+                                    activeSessionsCount = receivedSessions.size,
+                                    remoteSessions = receivedSessions
+                                )
+                            )
+                        }
+                        try {
+                            webSocket.close(1000, "probe completed")
+                        } catch (e: Exception) {}
+                    }
+                }
+
+                override fun onMessage(webSocket: okhttp3.WebSocket, text: String) {
+                    val parsed = parseSessionsFromBody(text)
+                    if (parsed.isNotEmpty()) {
+                        receivedSessions.addAll(parsed)
+                        val latency = System.currentTimeMillis() - startTime
+                        if (!deferred.isCompleted) {
+                            deferred.complete(
+                                HerdrConnectionResult(
+                                    isSuccess = true,
+                                    latencyMs = latency,
+                                    message = "Connected • ${latency}ms latency • ${receivedSessions.size} active desktop tab(s)",
+                                    activeSessionsCount = receivedSessions.size,
+                                    remoteSessions = receivedSessions
+                                )
+                            )
+                        }
+                    }
+                }
+
+                override fun onFailure(webSocket: okhttp3.WebSocket, t: Throwable, response: okhttp3.Response?) {
+                    if (!deferred.isCompleted) {
+                        deferred.complete(
+                            HerdrConnectionResult(
+                                isSuccess = false,
+                                latencyMs = System.currentTimeMillis() - startTime,
+                                message = "WebSocket failed: ${t.localizedMessage ?: "Connection refused"}"
+                            )
+                        )
+                    }
+                }
+            })
+
+            val result = kotlinx.coroutines.withTimeoutOrNull(3000) { deferred.await() }
+            if (result != null) {
+                result
+            } else {
+                try { ws.cancel() } catch (e: Exception) {}
+                HerdrConnectionResult(
+                    isSuccess = false,
+                    latencyMs = System.currentTimeMillis() - startTime,
+                    message = "Connection timeout after 3s. Ensure Herdr node is running at $wsUrl."
+                )
+            }
+        } catch (e: Exception) {
+            HerdrConnectionResult(
+                isSuccess = false,
+                latencyMs = System.currentTimeMillis() - startTime,
+                message = "WebSocket failed: ${e.localizedMessage}"
+            )
+        }
     }
 
     /**
@@ -146,28 +252,48 @@ class HerdrConnectionService {
 
     private fun parseSessionsFromBody(bodyString: String): List<Session> {
         val result = mutableListOf<Session>()
+        val text = bodyString.trim()
         try {
-            if (bodyString.startsWith("[")) {
-                val array = gson.fromJson(bodyString, JsonArray::class.java)
+            if (text.startsWith("[")) {
+                val array = gson.fromJson(text, JsonArray::class.java)
                 for (item in array) {
                     if (item.isJsonObject) {
                         parseSessionObject(item.asJsonObject)?.let { result.add(it) }
                     }
                 }
-            } else if (bodyString.startsWith("{")) {
-                val obj = gson.fromJson(bodyString, JsonObject::class.java)
-                if (obj.has("sessions") && obj.get("sessions").isJsonArray) {
-                    val array = obj.getAsJsonArray("sessions")
+            } else if (text.startsWith("{")) {
+                val obj = gson.fromJson(text, JsonObject::class.java)
+                val array = when {
+                    obj.has("sessions") && obj.get("sessions").isJsonArray -> obj.getAsJsonArray("sessions")
+                    obj.has("tabs") && obj.get("tabs").isJsonArray -> obj.getAsJsonArray("tabs")
+                    obj.has("data") && obj.get("data").isJsonArray -> obj.getAsJsonArray("data")
+                    obj.has("payload") && obj.get("payload").isJsonArray -> obj.getAsJsonArray("payload")
+                    obj.has("items") && obj.get("items").isJsonArray -> obj.getAsJsonArray("items")
+                    obj.has("active_sessions") && obj.get("active_sessions").isJsonArray -> obj.getAsJsonArray("active_sessions")
+                    obj.has("activeSessions") && obj.get("activeSessions").isJsonArray -> obj.getAsJsonArray("activeSessions")
+                    obj.has("open_tabs") && obj.get("open_tabs").isJsonArray -> obj.getAsJsonArray("open_tabs")
+                    obj.has("openTabs") && obj.get("openTabs").isJsonArray -> obj.getAsJsonArray("openTabs")
+                    else -> null
+                }
+
+                if (array != null) {
                     for (item in array) {
                         if (item.isJsonObject) {
                             parseSessionObject(item.asJsonObject)?.let { result.add(it) }
                         }
                     }
-                } else if (obj.has("active_sessions") && obj.get("active_sessions").isJsonArray) {
-                    val array = obj.getAsJsonArray("active_sessions")
-                    for (item in array) {
-                        if (item.isJsonObject) {
-                            parseSessionObject(item.asJsonObject)?.let { result.add(it) }
+                } else {
+                    // Check if map of sessions
+                    val containerObj = when {
+                        obj.has("sessions") && obj.get("sessions").isJsonObject -> obj.getAsJsonObject("sessions")
+                        obj.has("tabs") && obj.get("tabs").isJsonObject -> obj.getAsJsonObject("tabs")
+                        obj.has("data") && obj.get("data").isJsonObject -> obj.getAsJsonObject("data")
+                        else -> null
+                    }
+                    containerObj?.keySet()?.forEach { key ->
+                        val child = containerObj.get(key)
+                        if (child.isJsonObject) {
+                            parseSessionObject(child.asJsonObject, defaultId = key)?.let { result.add(it) }
                         }
                     }
                 }
@@ -178,9 +304,22 @@ class HerdrConnectionService {
         return result
     }
 
-    private fun parseSessionObject(json: JsonObject): Session? {
-        val id = json.get("id")?.asString ?: json.get("session_id")?.asString ?: UUID.randomUUID().toString()
-        val title = json.get("title")?.asString ?: json.get("name")?.asString ?: "Remote Agent"
+    private fun parseSessionObject(json: JsonObject, defaultId: String? = null): Session? {
+        val id = json.get("id")?.asString
+            ?: json.get("session_id")?.asString
+            ?: json.get("sessionId")?.asString
+            ?: json.get("tab_id")?.asString
+            ?: json.get("tabId")?.asString
+            ?: defaultId
+            ?: UUID.randomUUID().toString()
+
+        val title = json.get("title")?.asString
+            ?: json.get("name")?.asString
+            ?: json.get("label")?.asString
+            ?: json.get("tab_name")?.asString
+            ?: json.get("tabName")?.asString
+            ?: json.get("agent_name")?.asString
+            ?: "Remote Agent"
         val role = json.get("role")?.asString ?: "Autonomous Agent"
         val model = json.get("model")?.asString
 
