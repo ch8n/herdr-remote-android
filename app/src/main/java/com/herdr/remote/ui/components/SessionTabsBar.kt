@@ -4,16 +4,18 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,28 +57,31 @@ fun SessionTabsBar(
     onSyncTabs: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val activeIndex = remember(sessions, activeSessionId) {
         sessions.indexOfFirst { it.id == activeSessionId }
     }
 
     LaunchedEffect(activeSessionId, sessions.size) {
         if (activeIndex >= 0) {
-            val targetOffset = (activeIndex * 140 - 60).coerceAtLeast(0)
-            scrollState.animateScrollTo(targetOffset)
+            listState.animateScrollToItem(
+                index = activeIndex,
+                scrollOffset = 0
+            )
         }
     }
 
-    Row(
+    LazyRow(
+        state = listState,
         modifier = modifier
             .fillMaxWidth()
             .background(SurfaceDark)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .horizontalScroll(scrollState),
+            .padding(vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        sessions.forEach { session ->
+        items(sessions, key = { it.id }) { session ->
             val isActive = session.id == activeSessionId
 
             val bgCol by animateColorAsState(
@@ -141,50 +146,54 @@ fun SessionTabsBar(
         }
 
         // "+ New Tab" Button
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(SurfaceElevated)
-                .border(1.dp, BorderHighlight, RoundedCornerShape(12.dp))
-                .clickable { onNewSessionClick() }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+        item(key = "btn_new_tab") {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SurfaceElevated)
+                    .border(1.dp, BorderHighlight, RoundedCornerShape(12.dp))
+                    .clickable { onNewSessionClick() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "New Session",
-                    tint = AccentPrimary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "New Tab",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = TextPrimary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New Session",
+                        tint = AccentPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "New Tab",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = TextPrimary
+                    )
+                }
             }
         }
 
         // "Sync Tabs" Button (if callback provided)
         if (onSyncTabs != null) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(SurfaceElevated)
-                    .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
-                    .clickable { onSyncTabs() }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Sync Desktop Tabs",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
+            item(key = "btn_sync_tabs") {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceElevated)
+                        .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+                        .clickable { onSyncTabs() }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Sync Desktop Tabs",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
