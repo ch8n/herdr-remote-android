@@ -89,6 +89,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var activeSimulationJob: Job? = null
 
     init {
+        sessionRepository.restoreAllSessionsChat()
         observeSpeechState()
         observeWebSocketEvents()
         observeWebSocketStatus()
@@ -146,7 +147,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.OFFLINE, "Error • ${event.message}")
                     }
                     is HerdrServerEvent.ActiveSessionsReceived -> {
-                        sessionRepository.syncRemoteSessions(event.sessions)
+                        sessionRepository.syncRemoteSessions(event.sessions, event.sessionMessages)
+                        sessionRepository.restoreAllSessionsChat()
+                    }
+                    is HerdrServerEvent.SessionHistoryReceived -> {
+                        sessionRepository.syncSessionHistory(event.sessionId, event.messages)
                     }
                     is HerdrServerEvent.StreamChunk -> {
                         sessionRepository.appendStreamChunkToLastAgentMessage(event.sessionId, event.chunk)
@@ -181,6 +186,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val result = herdrConnectionService.testConnection(serverUrl)
             if (result.isSuccess && result.remoteSessions.isNotEmpty()) {
                 sessionRepository.syncRemoteSessions(result.remoteSessions)
+                sessionRepository.restoreAllSessionsChat()
             }
             onResult(result)
         }
@@ -192,6 +198,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectSession(sessionId: String) {
         sessionRepository.switchSession(sessionId)
+        if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
+            wsClient.requestSessionHistory(sessionId)
+        }
     }
 
     fun createSession(title: String, profile: AgentProfile) {
@@ -213,6 +222,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val result = herdrConnectionService.testConnection(currentUrl)
                 if (result.isSuccess && result.remoteSessions.isNotEmpty()) {
                     sessionRepository.syncRemoteSessions(result.remoteSessions)
+                    sessionRepository.restoreAllSessionsChat()
                     onComplete?.invoke(result.remoteSessions.size)
                 } else {
                     onComplete?.invoke(0)
@@ -390,8 +400,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _inputText.value = ""
         _pendingAttachments.value = emptyList()
 
-        // Dispatch directly to connected Herdr cluster
-        wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
+        // Dispatch directly to connected Herdr cluster if online, otherwise to simulator
+        if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
+            wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
+        } else {
+            dispatchToSimulator(currentSession, userMessage)
+        }
     }
 
     private fun dispatchToSimulator(session: Session, userMessage: Message) {

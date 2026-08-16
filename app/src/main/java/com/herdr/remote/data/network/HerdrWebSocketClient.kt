@@ -31,7 +31,8 @@ import java.util.concurrent.TimeUnit
 sealed class HerdrServerEvent {
     data class Connected(val serverInfo: String) : HerdrServerEvent()
     data class Disconnected(val reason: String) : HerdrServerEvent()
-    data class ActiveSessionsReceived(val sessions: List<Session>) : HerdrServerEvent()
+    data class ActiveSessionsReceived(val sessions: List<Session>, val sessionMessages: Map<String, List<Message>> = emptyMap()) : HerdrServerEvent()
+    data class SessionHistoryReceived(val sessionId: String, val messages: List<Message>) : HerdrServerEvent()
     data class StreamChunk(val sessionId: String, val chunk: String) : HerdrServerEvent()
     data class MessageComplete(val message: Message) : HerdrServerEvent()
     data class ToolStarted(val sessionId: String, val toolExecution: ToolExecution) : HerdrServerEvent()
@@ -138,6 +139,16 @@ class HerdrWebSocketClient(
         webSocket?.send("""{"action":"get_sessions"}""")
     }
 
+    fun requestSessionHistory(sessionId: String) {
+        if (sessionId.isBlank()) return
+        webSocket?.send("""{"type":"get_history","session_id":"$sessionId"}""")
+        webSocket?.send("""{"type":"get_messages","session_id":"$sessionId"}""")
+        webSocket?.send("""{"type":"get_tab_content","session_id":"$sessionId"}""")
+        webSocket?.send("""{"type":"select_tab","tab_id":"$sessionId"}""")
+        webSocket?.send("""{"type":"load_session","session_id":"$sessionId"}""")
+        webSocket?.send("""{"action":"get_history","sessionId":"$sessionId"}""")
+    }
+
     private fun handleIncomingMessage(text: String) {
         scope.launch(Dispatchers.Default) {
             try {
@@ -148,7 +159,8 @@ class HerdrWebSocketClient(
                     val array = gson.fromJson(text, com.google.gson.JsonArray::class.java)
                     val sessions = parseSessionArray(array)
                     if (sessions.isNotEmpty()) {
-                        _events.emit(HerdrServerEvent.ActiveSessionsReceived(sessions))
+                        val sessionMessagesMap = extractSessionMessagesMap(array)
+                        _events.emit(HerdrServerEvent.ActiveSessionsReceived(sessions, sessionMessagesMap))
                     }
                     return@launch
                 }
@@ -172,7 +184,9 @@ class HerdrWebSocketClient(
                             else -> null
                         }
 
+                        val sessionMessagesMap = mutableMapOf<String, List<Message>>()
                         val sessionsList = if (array != null) {
+                            sessionMessagesMap.putAll(extractSessionMessagesMap(array))
                             parseSessionArray(array)
                         } else {
                             // Check if dictionary mapping of sessions { "tab-1": {...}, "tab-2": {...} }
@@ -186,14 +200,38 @@ class HerdrWebSocketClient(
                             containerObj?.keySet()?.forEach { key ->
                                 val child = containerObj.get(key)
                                 if (child.isJsonObject) {
-                                    parseSingleSession(child.asJsonObject, defaultId = key)?.let { list.add(it) }
+                                    val childObj = child.asJsonObject
+                                    parseSingleSession(childObj, defaultId = key)?.let {
+                                        list.add(it)
+                                        val msgs = extractMessagesFromSessionObject(childObj, it.id)
+                                        if (msgs.isNotEmpty()) {
+                                            sessionMessagesMap[it.id] = msgs
+                                        }
+                                    }
                                 }
                             }
                             list
                         }
 
                         if (sessionsList.isNotEmpty()) {
-                            _events.emit(HerdrServerEvent.ActiveSessionsReceived(sessionsList))
+                            _events.emit(HerdrServerEvent.ActiveSessionsReceived(sessionsList, sessionMessagesMap))
+                        }
+                    }
+
+                    "history", "chat_history", "session_history", "messages", "messages_list", "get_history", "get_messages", "load_session" -> {
+                        val messagesArray = when {
+                            json.has("messages") && json.get("messages").isJsonArray -> json.getAsJsonArray("messages")
+                            json.has("history") && json.get("history").isJsonArray -> json.getAsJsonArray("history")
+                            json.has("chat_history") && json.get("chat_history").isJsonArray -> json.getAsJsonArray("chat_history")
+                            json.has("data") && json.get("data").isJsonArray -> json.getAsJsonArray("data")
+                            json.has("payload") && json.get("payload").isJsonArray -> json.getAsJsonArray("payload")
+                            else -> null
+                        }
+                        if (messagesArray != null && sessionId.isNotBlank()) {
+                            val parsedMessages = parseMessagesArray(messagesArray, sessionId)
+                            if (parsedMessages.isNotEmpty()) {
+                                _events.emit(HerdrServerEvent.SessionHistoryReceived(sessionId, parsedMessages))
+                            }
                         }
                     }
 
@@ -205,7 +243,9 @@ class HerdrWebSocketClient(
                             else -> json
                         }
                         parseSingleSession(sessionObj)?.let { newSession ->
-                            _events.emit(HerdrServerEvent.ActiveSessionsReceived(listOf(newSession)))
+                            val msgs = extractMessagesFromSessionObject(sessionObj, newSession.id)
+                            val messagesMap = if (msgs.isNotEmpty()) mapOf(newSession.id to msgs) else emptyMap()
+                            _events.emit(HerdrServerEvent.ActiveSessionsReceived(listOf(newSession), messagesMap))
                         }
                     }
 
@@ -330,4 +370,71 @@ class HerdrWebSocketClient(
             modelOverride = model
         )
     }
+
+    private fun extractSessionMessagesMap(array: com.google.gson.JsonArray): Map<String, List<Message>> {
+        val map = mutableMapOf<String, List<Message>>()
+        for (item in array) {
+            if (item.isJsonObject) {
+                val obj = item.asJsonObject
+                val id = obj.get("id")?.asString
+                    ?: obj.get("session_id")?.asString
+                    ?: obj.get("sessionId")?.asString
+                    ?: obj.get("tab_id")?.asString
+                    ?: obj.get("tabId")?.asString
+                    ?: continue
+                val msgs = extractMessagesFromSessionObject(obj, id)
+                if (msgs.isNotEmpty()) {
+                    map[id] = msgs
+                }
+            }
+        }
+        return map
+    }
+
+    private fun extractMessagesFromSessionObject(obj: JsonObject, sessionId: String): List<Message> {
+        val messagesArray = when {
+            obj.has("messages") && obj.get("messages").isJsonArray -> obj.getAsJsonArray("messages")
+            obj.has("history") && obj.get("history").isJsonArray -> obj.getAsJsonArray("history")
+            obj.has("chat_history") && obj.get("chat_history").isJsonArray -> obj.getAsJsonArray("chat_history")
+            obj.has("conversation") && obj.get("conversation").isJsonArray -> obj.getAsJsonArray("conversation")
+            else -> null
+        } ?: return emptyList()
+
+        return parseMessagesArray(messagesArray, sessionId)
+    }
+
+    private fun parseMessagesArray(array: com.google.gson.JsonArray, defaultSessionId: String): List<Message> {
+        val list = mutableListOf<Message>()
+        for (item in array) {
+            if (item.isJsonObject) {
+                parseMessageObject(item.asJsonObject, defaultSessionId)?.let { list.add(it) }
+            }
+        }
+        return list
+    }
+
+    private fun parseMessageObject(obj: JsonObject, defaultSessionId: String): Message? {
+        val id = obj.get("id")?.asString ?: obj.get("message_id")?.asString ?: UUID.randomUUID().toString()
+        val sId = obj.get("session_id")?.asString ?: obj.get("sessionId")?.asString ?: defaultSessionId
+        val senderStr = obj.get("sender")?.asString ?: obj.get("role")?.asString ?: "agent"
+        val sender = when (senderStr.lowercase()) {
+            "user", "human" -> MessageSender.USER
+            "system" -> MessageSender.SYSTEM
+            else -> MessageSender.AGENT
+        }
+        val content = obj.get("content")?.asString ?: obj.get("text")?.asString ?: obj.get("response")?.asString ?: return null
+        val thought = obj.get("thought")?.asString ?: obj.get("reasoning")?.asString
+        val timestamp = obj.get("timestamp")?.asLong ?: obj.get("created_at")?.asLong ?: System.currentTimeMillis()
+
+        return Message(
+            id = id,
+            sessionId = sId,
+            sender = sender,
+            content = content,
+            timestamp = timestamp,
+            status = MessageStatus.SENT,
+            thought = thought
+        )
+    }
 }
+

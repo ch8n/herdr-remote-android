@@ -263,6 +263,8 @@ fun ChatScreen(
                         .fillMaxWidth()
                 ) {
                     if (messages.isEmpty()) {
+                        val currentSession = activeSession
+                        val profile = currentSession?.agentProfile ?: com.herdr.remote.data.model.AgentProfile.PRESET_PROFILES[0]
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -282,35 +284,38 @@ fun ChatScreen(
                                     modifier = Modifier
                                         .size(60.dp)
                                         .clip(CircleShape)
-                                        .background(
-                                            if (wsConnectionStatus == AgentConnectionStatus.ONLINE) AccentEmerald.copy(alpha = 0.15f)
-                                            else AccentCyan.copy(alpha = 0.15f)
-                                        ),
+                                        .background(AccentPrimary.copy(alpha = 0.15f)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) Icons.Default.CheckCircle else Icons.Default.Lan,
-                                        contentDescription = null,
-                                        tint = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) AccentEmerald else AccentCyan,
-                                        modifier = Modifier.size(30.dp)
+                                    Text(
+                                        text = profile.avatarEmoji,
+                                        fontSize = 28.sp
                                     )
                                 }
 
                                 Spacer(modifier = Modifier.height(16.dp))
 
                                 Text(
-                                    text = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) "Connected to Herdr Node" else "Herdr Node Disconnected",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                                    text = currentSession?.title ?: profile.name,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 18.sp),
                                     color = TextPrimary
                                 )
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Text(
+                                    text = profile.role,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                    color = AccentCyan
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
 
                                 Text(
                                     text = if (wsConnectionStatus == AgentConnectionStatus.ONLINE)
-                                        "Active sessions synced from Herdr daemon. Send a prompt below to interact with your agents."
+                                        "Connected to Herdr remote daemon. Send a prompt below or choose a starter action."
                                     else
-                                        "Configure your Herdr remote URL and test connectivity via Tailscale or your local network.",
+                                        "Ready for instructions. Type or speak below to command this agent.",
                                     style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp, fontSize = 13.sp),
                                     color = TextSecondary,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -318,28 +323,30 @@ fun ChatScreen(
 
                                 Spacer(modifier = Modifier.height(20.dp))
 
-                                Button(
-                                    onClick = onOpenSettings,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) SurfaceElevated else AccentCyan
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                                // Quick Starter Prompts
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = null,
-                                        tint = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) TextPrimary else Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Go to Settings & Connect",
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) TextPrimary else Color.White
-                                        )
-                                    )
+                                    Button(
+                                        onClick = { viewModel.sendUserMessage("Check system status and active subagent tasks.") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                    ) {
+                                        Text("📊 System Status", fontSize = 11.sp, color = TextPrimary, maxLines = 1)
+                                    }
+
+                                    Button(
+                                        onClick = { viewModel.sendUserMessage("Analyze workspace repositories and report pending diffs.") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                    ) {
+                                        Text("🔍 Run Analysis", fontSize = 11.sp, color = TextPrimary, maxLines = 1)
+                                    }
                                 }
                             }
                         }

@@ -26,18 +26,38 @@ class SessionRepository {
     val messagesMap: StateFlow<Map<String, List<Message>>> = _messagesMap.asStateFlow()
 
     init {
-        // Initial clean state with default cluster session (empty messages)
         val defaultProfile = AgentProfile.PRESET_PROFILES[0]
         val initialSession = Session(
             id = "default_cluster",
-            title = "Herdr Node",
+            title = "Herdr Main Cluster",
             agentProfile = defaultProfile,
-            status = AgentConnectionStatus.OFFLINE,
-            statusDetail = "Disconnected • Configure in Settings"
+            status = AgentConnectionStatus.ONLINE,
+            statusDetail = "Online • Ready for commands"
         )
+        val welcomeMessage = Message(
+            id = UUID.randomUUID().toString(),
+            sessionId = initialSession.id,
+            sender = MessageSender.AGENT,
+            content = """
+👋 **Welcome to Herdr Remote Android!**
+
+I am **${defaultProfile.name}**, your autonomous system coordinator.
+
+✨ **Capabilities & Controls**:
+- **Multi-Session Tabs**: Tap `+ New Tab` above to spawn and switch specialized sub-agents.
+- **Sync Desktop Tabs**: Tap `🔄` in the tab bar or in the agent header to pull live desktop workspace tabs.
+- **Voice & AI Rephrase**: Use the mic button to speak naturally. Verbal fillers (*um*, *uh*) are cleaned via OpenRouter AI.
+- **Tools & Approvals**: Approve or reject elevated bash/file executions with 1 tap.
+
+How can I assist your workflow today?
+            """.trimIndent(),
+            status = MessageStatus.SENT,
+            thought = "Autonomous agent system initialized. Subsystems online: Multi-session tabs, WebSocket sync, Speech Synthesizer."
+        )
+
         _sessions.value = listOf(initialSession)
         _activeSessionId.value = initialSession.id
-        _messagesMap.value = emptyMap()
+        _messagesMap.value = mapOf(initialSession.id to listOf(welcomeMessage))
     }
 
     fun createSession(
@@ -75,7 +95,53 @@ class SessionRepository {
     fun switchSession(sessionId: String) {
         if (_sessions.value.any { it.id == sessionId }) {
             _activeSessionId.value = sessionId
+            ensureSessionMessages(sessionId)
         }
+    }
+
+    fun ensureSessionMessages(sessionId: String) {
+        val currentMap = _messagesMap.value.toMutableMap()
+        val currentMsgs = currentMap[sessionId]
+        if (currentMsgs.isNullOrEmpty()) {
+            val session = _sessions.value.find { it.id == sessionId }
+            if (session != null) {
+                val profile = session.agentProfile
+                val intro = Message(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = sessionId,
+                    sender = MessageSender.AGENT,
+                    content = "⚡ **${profile.name}** (${session.title}) is online.\nRole: *${profile.role}*\nReady for commands.",
+                    status = MessageStatus.SENT
+                )
+                currentMap[sessionId] = listOf(intro)
+                _messagesMap.value = currentMap
+            }
+        }
+    }
+
+    fun restoreAllSessionsChat() {
+        val currentMap = _messagesMap.value.toMutableMap()
+        _sessions.value.forEach { session ->
+            if (currentMap[session.id].isNullOrEmpty()) {
+                val profile = session.agentProfile
+                val intro = Message(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = session.id,
+                    sender = MessageSender.AGENT,
+                    content = "⚡ **${profile.name}** (${session.title}) is online.\nRole: *${profile.role}*\nReady for commands.",
+                    status = MessageStatus.SENT
+                )
+                currentMap[session.id] = listOf(intro)
+            }
+        }
+        _messagesMap.value = currentMap
+    }
+
+    fun syncSessionHistory(sessionId: String, messages: List<Message>) {
+        if (messages.isEmpty()) return
+        val currentMap = _messagesMap.value.toMutableMap()
+        currentMap[sessionId] = messages
+        _messagesMap.value = currentMap
     }
 
     fun closeSession(sessionId: String) {
@@ -93,7 +159,9 @@ class SessionRepository {
         _messagesMap.value = updatedMap
 
         if (_activeSessionId.value == sessionId) {
-            _activeSessionId.value = updatedList.last().id
+            val nextId = updatedList.last().id
+            _activeSessionId.value = nextId
+            ensureSessionMessages(nextId)
         }
     }
 
@@ -147,16 +215,21 @@ class SessionRepository {
         val currentMap = _messagesMap.value.toMutableMap()
         currentMap[sessionId] = emptyList()
         _messagesMap.value = currentMap
+        ensureSessionMessages(sessionId)
     }
 
     /**
      * Merge or sync active sessions received from remote Herdr cluster.
      */
-    fun syncRemoteSessions(remoteSessions: List<Session>) {
+    fun syncRemoteSessions(
+        remoteSessions: List<Session>,
+        sessionMessagesMap: Map<String, List<Message>> = emptyMap()
+    ) {
         if (remoteSessions.isEmpty()) return
 
         val currentList = _sessions.value
         val newSessionsList = mutableListOf<Session>()
+        val currentMessages = _messagesMap.value.toMutableMap()
 
         // Update existing sessions or add new remote ones
         remoteSessions.forEach { remote ->
@@ -172,35 +245,40 @@ class SessionRepository {
                 )
             } else {
                 newSessionsList.add(remote)
+            }
 
-                // Add initial session greeting for newly discovered remote tab
-                val currentMessages = _messagesMap.value.toMutableMap()
-                if (!currentMessages.containsKey(remote.id)) {
-                    currentMessages[remote.id] = listOf(
-                        Message(
-                            id = UUID.randomUUID().toString(),
-                            sessionId = remote.id,
-                            sender = MessageSender.AGENT,
-                            content = "⚡ Synced active desktop session **${remote.title}** from Herdr node.\nAgent role: *${remote.agentProfile.role}*",
-                            status = MessageStatus.SENT
-                        )
+            // Sync or populate messages
+            val remoteMsgs = sessionMessagesMap[remote.id]
+            if (!remoteMsgs.isNullOrEmpty()) {
+                currentMessages[remote.id] = remoteMsgs
+            } else if (currentMessages[remote.id].isNullOrEmpty()) {
+                currentMessages[remote.id] = listOf(
+                    Message(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = remote.id,
+                        sender = MessageSender.AGENT,
+                        content = "⚡ Synced active desktop session **${remote.title}** from Herdr node.\nAgent role: *${remote.agentProfile.role}*\nReady to receive your commands.",
+                        status = MessageStatus.SENT
                     )
-                    _messagesMap.value = currentMessages
-                }
+                )
             }
         }
 
-        // Keep active local sessions that were not in remote list, excluding initial placeholder default_cluster
+        // Keep active local sessions that were not in remote list
         val localPreserved = currentList.filter { local ->
-            local.id != "default_cluster" && remoteSessions.none { it.id == local.id }
+            remoteSessions.none { it.id == local.id }
         }
         val mergedSessions = (newSessionsList + localPreserved).distinctBy { it.id }
 
         _sessions.value = mergedSessions
+        _messagesMap.value = currentMessages
 
-        // Switch to the first synced remote tab if on default_cluster or if active session is missing
-        if (_activeSessionId.value == "default_cluster" || mergedSessions.none { it.id == _activeSessionId.value }) {
-            _activeSessionId.value = mergedSessions.first().id
+        // Switch to the first synced remote tab if active session is missing
+        if (mergedSessions.none { it.id == _activeSessionId.value }) {
+            val firstId = mergedSessions.first().id
+            _activeSessionId.value = firstId
+            ensureSessionMessages(firstId)
         }
     }
 }
+
