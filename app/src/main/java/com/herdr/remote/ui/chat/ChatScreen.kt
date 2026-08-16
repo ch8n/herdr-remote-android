@@ -140,10 +140,13 @@ fun ChatScreen(
         }
     }
 
-    // Auto-scroll to bottom when messages change
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
+    // Auto-scroll to the very end of the last message when messages change or tab switches
+    LaunchedEffect(messages.size, messages.lastOrNull()?.content, activeSessionId) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(
+                index = messages.size,
+                scrollOffset = 100_000
+            )
         }
     }
 
@@ -356,7 +359,7 @@ fun ChatScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 12.dp),
-                            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+                            contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(messages, key = { it.id }) { msg ->
@@ -367,6 +370,9 @@ fun ChatScreen(
                                     onImageClick = { viewModel.setPreviewImage(it) }
                                 )
                             }
+                            item(key = "bottom_scroll_anchor") {
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
                         }
                     }
 
@@ -376,7 +382,10 @@ fun ChatScreen(
                             onClick = {
                                 scope.launch {
                                     if (messages.isNotEmpty()) {
-                                        listState.animateScrollToItem(messages.size - 1)
+                                        listState.animateScrollToItem(
+                                            index = messages.size,
+                                            scrollOffset = 100_000
+                                        )
                                     }
                                 }
                             },
