@@ -5,10 +5,10 @@ data class AgentProfile(
     val name: String,
     val role: String,
     val avatarEmoji: String,
-    val defaultModel: String,
-    val description: String,
-    val systemPrompt: String,
-    val capabilities: List<String>
+    val defaultModel: String = "openrouter/auto",
+    val description: String = "",
+    val systemPrompt: String = "",
+    val capabilities: List<String> = emptyList()
 ) {
     companion object {
         val PRESET_PROFILES = listOf(

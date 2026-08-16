@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudQueue
@@ -38,12 +40,16 @@ import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import com.herdr.remote.HerdrApplication
+import com.herdr.remote.data.network.HerdrConnectionResult
+import com.herdr.remote.data.network.HerdrConnectionService
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -115,6 +121,25 @@ fun SettingsScreen(
 
     var isTestingKey by remember { mutableStateOf(false) }
     var testKeyStatus by remember { mutableStateOf<String?>(null) }
+
+    val herdrConnectionService = remember { HerdrConnectionService() }
+    var isTestingHerdr by remember { mutableStateOf(false) }
+    var herdrTestResult by remember { mutableStateOf<HerdrConnectionResult?>(null) }
+
+    fun testHerdr() {
+        if (serverUrl.isBlank()) return
+        isTestingHerdr = true
+        herdrTestResult = null
+        scope.launch {
+            val result = herdrConnectionService.testConnection(serverUrl)
+            isTestingHerdr = false
+            herdrTestResult = result
+            if (result.isSuccess && result.remoteSessions.isNotEmpty()) {
+                HerdrApplication.instance.sessionRepository.syncRemoteSessions(result.remoteSessions)
+                Toast.makeText(context, "Synced ${result.remoteSessions.size} active sessions!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // Tailscale Status (reactive)
     val tailscaleStatus by produceState(initialValue = TailscaleHelper.getStatus(context)) {
@@ -740,6 +765,112 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Test Connection Button & Sync Actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { testHerdr() },
+                            enabled = !isTestingHerdr && serverUrl.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (herdrTestResult?.isSuccess == true) AccentEmerald else AccentCyan,
+                                disabledContainerColor = SurfaceElevated
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (isTestingHerdr) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Testing...",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = Color.White)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (herdrTestResult?.isSuccess == true) Icons.Default.CheckCircle else Icons.Default.Bolt,
+                                    contentDescription = "Test Connection",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (herdrTestResult?.isSuccess == true) "Re-test Connection" else "Test Connection",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = Color.White)
+                                )
+                            }
+                        }
+
+                        if (herdrTestResult?.isSuccess == true && herdrTestResult?.remoteSessions?.isNotEmpty() == true) {
+                            Button(
+                                onClick = {
+                                    herdrTestResult?.remoteSessions?.let { list ->
+                                        HerdrApplication.instance.sessionRepository.syncRemoteSessions(list)
+                                        Toast.makeText(context, "Synced ${list.size} active sessions!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SurfaceElevated
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync",
+                                    tint = AccentCyan,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Sync Tabs (${herdrTestResult?.remoteSessions?.size})",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = AccentCyan)
+                                )
+                            }
+                        }
+                    }
+
+                    // Connection Result Status Card
+                    herdrTestResult?.let { res ->
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (res.isSuccess) AccentEmerald.copy(alpha = 0.12f) else AccentRose.copy(alpha = 0.12f))
+                                .border(
+                                    1.dp,
+                                    if (res.isSuccess) AccentEmerald.copy(alpha = 0.4f) else AccentRose.copy(alpha = 0.4f),
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .padding(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (res.isSuccess) Icons.Default.CheckCircle else Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = if (res.isSuccess) AccentEmerald else AccentRose,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = res.message,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    color = if (res.isSuccess) AccentEmerald else AccentRose
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

@@ -44,10 +44,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val openRouterService = OpenRouterService()
     private val agentSimulator = HerdrAgentSimulator()
     private val wsClient = HerdrWebSocketClient(viewModelScope)
+    private val herdrConnectionService = com.herdr.remote.data.network.HerdrConnectionService()
 
     val settings: StateFlow<SettingsData> = settingsRepository.settings
     val sessions: StateFlow<List<Session>> = sessionRepository.sessions
     val activeSessionId: StateFlow<String> = sessionRepository.activeSessionId
+    val wsConnectionStatus: StateFlow<AgentConnectionStatus> = wsClient.connectionStatus
 
     val activeSession: StateFlow<Session?> = combine(sessions, activeSessionId) { list, id ->
         list.find { it.id == id } ?: list.firstOrNull()
@@ -89,6 +91,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     init {
         observeSpeechState()
         observeWebSocketEvents()
+        observeSettings()
+    }
+
+    private fun observeSettings() {
+        viewModelScope.launch {
+            settings.collect { cfg ->
+                if (!cfg.isMockMode && cfg.herdrServerUrl.isNotBlank()) {
+                    wsClient.connect(cfg.herdrServerUrl)
+                } else {
+                    wsClient.disconnect()
+                }
+            }
+        }
     }
 
     private fun observeSpeechState() {
@@ -105,6 +120,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             wsClient.events.collect { event ->
                 when (event) {
+                    is HerdrServerEvent.Connected -> {
+                        wsClient.requestActiveSessions()
+                    }
+                    is HerdrServerEvent.ActiveSessionsReceived -> {
+                        sessionRepository.syncRemoteSessions(event.sessions)
+                    }
                     is HerdrServerEvent.StreamChunk -> {
                         sessionRepository.appendStreamChunkToLastAgentMessage(event.sessionId, event.chunk)
                     }
@@ -131,6 +152,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     else -> {}
                 }
             }
+        }
+    }
+
+    fun testHerdrConnection(serverUrl: String, onResult: (com.herdr.remote.data.network.HerdrConnectionResult) -> Unit) {
+        viewModelScope.launch {
+            val result = herdrConnectionService.testConnection(serverUrl)
+            if (result.isSuccess && result.remoteSessions.isNotEmpty()) {
+                sessionRepository.syncRemoteSessions(result.remoteSessions)
+            }
+            onResult(result)
         }
     }
 

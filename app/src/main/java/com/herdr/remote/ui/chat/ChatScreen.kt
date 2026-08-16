@@ -37,12 +37,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -55,6 +60,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.herdr.remote.data.model.AgentConnectionStatus
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -113,6 +119,7 @@ fun ChatScreen(
     val activeSessionId by viewModel.activeSessionId.collectAsState()
     val activeSession by viewModel.activeSession.collectAsState()
     val messages by viewModel.activeMessages.collectAsState()
+    val wsConnectionStatus by viewModel.wsConnectionStatus.collectAsState()
 
     val inputText by viewModel.inputText.collectAsState()
     val pendingAttachments by viewModel.pendingAttachments.collectAsState()
@@ -243,21 +250,104 @@ fun ChatScreen(
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 12.dp),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(messages, key = { it.id }) { msg ->
-                            val currentProfile = activeSession?.agentProfile ?: com.herdr.remote.data.model.AgentProfile.PRESET_PROFILES[0]
-                            ChatBubble(
-                                message = msg,
-                                agentProfile = currentProfile,
-                                onImageClick = { viewModel.setPreviewImage(it) }
-                            )
+                    if (messages.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(SurfaceDark)
+                                    .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+                                    .padding(24.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (wsConnectionStatus == AgentConnectionStatus.ONLINE) AccentEmerald.copy(alpha = 0.15f)
+                                            else AccentCyan.copy(alpha = 0.15f)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) Icons.Default.CheckCircle else Icons.Default.Lan,
+                                        contentDescription = null,
+                                        tint = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) AccentEmerald else AccentCyan,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Text(
+                                    text = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) "Connected to Herdr Node" else "Herdr Node Disconnected",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                                    color = TextPrimary
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text(
+                                    text = if (wsConnectionStatus == AgentConnectionStatus.ONLINE)
+                                        "Active sessions synced from Herdr daemon. Send a prompt below to interact with your agents."
+                                    else
+                                        "Configure your Herdr remote URL and test connectivity via Tailscale or your local network.",
+                                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp, fontSize = 13.sp),
+                                    color = TextSecondary,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+
+                                Spacer(modifier = Modifier.height(20.dp))
+
+                                Button(
+                                    onClick = onOpenSettings,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) SurfaceElevated else AccentCyan
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = null,
+                                        tint = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) TextPrimary else Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Go to Settings & Connect",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (wsConnectionStatus == AgentConnectionStatus.ONLINE) TextPrimary else Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp),
+                            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(messages, key = { it.id }) { msg ->
+                                val currentProfile = activeSession?.agentProfile ?: com.herdr.remote.data.model.AgentProfile.PRESET_PROFILES[0]
+                                ChatBubble(
+                                    message = msg,
+                                    agentProfile = currentProfile,
+                                    onImageClick = { viewModel.setPreviewImage(it) }
+                                )
+                            }
                         }
                     }
 

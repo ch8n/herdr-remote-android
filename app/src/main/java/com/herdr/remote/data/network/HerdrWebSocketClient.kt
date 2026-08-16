@@ -3,10 +3,12 @@ package com.herdr.remote.data.network
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.herdr.remote.data.model.AgentConnectionStatus
+import com.herdr.remote.data.model.AgentProfile
 import com.herdr.remote.data.model.Attachment
 import com.herdr.remote.data.model.Message
 import com.herdr.remote.data.model.MessageSender
 import com.herdr.remote.data.model.MessageStatus
+import com.herdr.remote.data.model.Session
 import com.herdr.remote.data.model.ToolExecution
 import com.herdr.remote.data.model.ToolStatus
 import kotlinx.coroutines.CoroutineScope
@@ -23,11 +25,13 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 sealed class HerdrServerEvent {
     data class Connected(val serverInfo: String) : HerdrServerEvent()
     data class Disconnected(val reason: String) : HerdrServerEvent()
+    data class ActiveSessionsReceived(val sessions: List<Session>) : HerdrServerEvent()
     data class StreamChunk(val sessionId: String, val chunk: String) : HerdrServerEvent()
     data class MessageComplete(val message: Message) : HerdrServerEvent()
     data class ToolStarted(val sessionId: String, val toolExecution: ToolExecution) : HerdrServerEvent()
@@ -73,6 +77,9 @@ class HerdrWebSocketClient(
                     _connectionStatus.value = AgentConnectionStatus.ONLINE
                     scope.launch {
                         _events.emit(HerdrServerEvent.Connected("Connected to Herdr remote node at $serverUrl"))
+                        // Handshake and query live active sessions
+                        webSocket.send("""{"type":"client_hello","client":"herdr-remote-android","version":"1.0"}""")
+                        webSocket.send("""{"type":"get_sessions"}""")
                     }
                 }
 
@@ -123,6 +130,10 @@ class HerdrWebSocketClient(
         webSocket?.send(payload.toString())
     }
 
+    fun requestActiveSessions() {
+        webSocket?.send("""{"type":"get_sessions"}""")
+    }
+
     private fun handleIncomingMessage(text: String) {
         scope.launch(Dispatchers.Default) {
             try {
@@ -131,6 +142,60 @@ class HerdrWebSocketClient(
                 val sessionId = json.get("session_id")?.asString ?: ""
 
                 when (type) {
+                    "sessions_list", "active_sessions", "sessions" -> {
+                        val sessionsList = mutableListOf<Session>()
+                        val array = when {
+                            json.has("sessions") && json.get("sessions").isJsonArray -> json.getAsJsonArray("sessions")
+                            json.has("data") && json.get("data").isJsonArray -> json.getAsJsonArray("data")
+                            else -> null
+                        }
+
+                        if (array != null) {
+                            for (item in array) {
+                                if (item.isJsonObject) {
+                                    val obj = item.asJsonObject
+                                    val id = obj.get("id")?.asString ?: obj.get("session_id")?.asString ?: UUID.randomUUID().toString()
+                                    val title = obj.get("title")?.asString ?: obj.get("name")?.asString ?: "Remote Agent"
+                                    val role = obj.get("role")?.asString ?: "Autonomous Agent"
+                                    val model = obj.get("model")?.asString
+                                    val statusStr = obj.get("status")?.asString ?: "ONLINE"
+
+                                    val status = when (statusStr.uppercase()) {
+                                        "THINKING" -> AgentConnectionStatus.THINKING
+                                        "EXECUTING_TOOL" -> AgentConnectionStatus.EXECUTING_TOOL
+                                        "STREAMING" -> AgentConnectionStatus.STREAMING
+                                        "OFFLINE" -> AgentConnectionStatus.OFFLINE
+                                        else -> AgentConnectionStatus.ONLINE
+                                    }
+
+                                    val profile = AgentProfile(
+                                        id = "remote_${id.take(8)}",
+                                        name = title,
+                                        role = role,
+                                        avatarEmoji = if (title.contains("code", true)) "⚡" else if (title.contains("research", true)) "🔬" else "🤖",
+                                        systemPrompt = "Remote Herdr agent session",
+                                        defaultModel = model ?: "openrouter/auto"
+                                    )
+
+                                    sessionsList.add(
+                                        Session(
+                                            id = id,
+                                            title = title,
+                                            agentProfile = profile,
+                                            status = status,
+                                            statusDetail = "Remote Herdr Session • $statusStr",
+                                            modelOverride = model
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        if (sessionsList.isNotEmpty()) {
+                            _events.emit(HerdrServerEvent.ActiveSessionsReceived(sessionsList))
+                        }
+                    }
+
                     "stream_chunk" -> {
                         val chunk = json.get("chunk")?.asString ?: ""
                         _events.emit(HerdrServerEvent.StreamChunk(sessionId, chunk))
