@@ -102,7 +102,7 @@ fun TopAgentHeader(
         modifier = modifier
             .fillMaxWidth()
             .background(SurfaceDark)
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -112,13 +112,13 @@ fun TopAgentHeader(
             // Agent Avatar and Title block
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f, fill = false)
             ) {
                 // Agent Avatar with status ring
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
@@ -129,15 +129,15 @@ fun TopAgentHeader(
                 ) {
                     Text(
                         text = session.agentProfile.avatarEmoji,
-                        fontSize = 20.sp
+                        fontSize = 18.sp
                     )
 
                     // Live Status Dot
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(2.dp)
-                            .size(11.dp)
+                            .padding(1.dp)
+                            .size(10.dp)
                             .scale(pulseScale)
                             .clip(CircleShape)
                             .background(statusColor)
@@ -145,16 +145,17 @@ fun TopAgentHeader(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 // AGENT NAME and live status detail
-                Column {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = session.agentProfile.name.uppercase(),
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
+                                fontSize = 14.sp,
+                                letterSpacing = 0.4.sp
                             ),
                             color = TextPrimary,
                             maxLines = 1,
@@ -164,18 +165,18 @@ fun TopAgentHeader(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = 1.dp)
                     ) {
                         Text(
                             text = when (session.status) {
                                 AgentConnectionStatus.ONLINE -> "Online • ${session.title}"
                                 AgentConnectionStatus.THINKING -> "Thinking..."
                                 AgentConnectionStatus.EXECUTING_TOOL -> session.statusDetail
-                                AgentConnectionStatus.STREAMING -> "Streaming response..."
-                                AgentConnectionStatus.CONNECTING -> "Connecting to node..."
+                                AgentConnectionStatus.STREAMING -> "Streaming..."
+                                AgentConnectionStatus.CONNECTING -> "Connecting..."
                                 AgentConnectionStatus.OFFLINE -> "Offline"
                             },
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                             color = statusColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -184,25 +185,27 @@ fun TopAgentHeader(
                 }
             }
 
+            Spacer(modifier = Modifier.width(6.dp))
+
             // Action Buttons
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 // AI Rephrase Quick Indicator/Toggle
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(
                             if (autoRephraseEnabled) AccentViolet.copy(alpha = 0.18f) else Color.Transparent
                         )
                         .border(
                             1.dp,
                             if (autoRephraseEnabled) AccentViolet.copy(alpha = 0.5f) else BorderSubtle,
-                            RoundedCornerShape(20.dp)
+                            RoundedCornerShape(16.dp)
                         )
                         .clickable { onToggleAutoRephrase() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -210,35 +213,41 @@ fun TopAgentHeader(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = "Auto Rephrase",
                             tint = if (autoRephraseEnabled) AccentViolet else TextMuted,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(12.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = if (autoRephraseEnabled) "AI Prompt" else "Raw",
-                            style = MaterialTheme.typography.labelSmall,
+                            text = if (autoRephraseEnabled) "AI" else "Raw",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                             color = if (autoRephraseEnabled) AccentViolet else TextMuted
                         )
                     }
                 }
 
                 // Settings Button
-                IconButton(onClick = onOpenSettings) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.size(34.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Tune,
                         contentDescription = "Settings",
                         tint = TextSecondary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
                 // More Options Menu
                 Box {
-                    IconButton(onClick = { showMenu = true }) {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(34.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "More Options",
                             tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 

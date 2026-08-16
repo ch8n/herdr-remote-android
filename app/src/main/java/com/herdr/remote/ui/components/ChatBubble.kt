@@ -67,6 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -166,7 +167,7 @@ fun ChatBubble(
 
         Column(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-            modifier = Modifier.widthIn(max = 340.dp)
+            modifier = Modifier.weight(1f, fill = false)
         ) {
             // Main Bubble Container
             Box(
@@ -214,12 +215,17 @@ fun ChatBubble(
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = if (isUser) AccentViolet else AccentCyan
+                            color = if (isUser) AccentViolet else AccentCyan,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+
+                        Spacer(modifier = Modifier.width(6.dp))
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             // Markdown Toggle Pill (Preview vs Raw)
                             Box(

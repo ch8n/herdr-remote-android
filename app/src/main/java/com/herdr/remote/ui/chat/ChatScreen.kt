@@ -483,7 +483,7 @@ fun ChatScreen(
                             IconButton(
                                 onClick = { viewModel.triggerManualRephrase() },
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(38.dp)
                                     .clip(CircleShape)
                                     .background(AccentViolet.copy(alpha = 0.2f))
                                     .border(1.dp, AccentViolet.copy(alpha = 0.5f), CircleShape)
@@ -499,37 +499,37 @@ fun ChatScreen(
                                         imageVector = Icons.Default.AutoAwesome,
                                         contentDescription = "AI Polish Prompt",
                                         tint = AccentViolet,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
-                        }
+                        } else {
+                            // Speech Mic Button (when input is empty)
+                            IconButton(
+                                onClick = {
+                                    val hasAudioPermission = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO
+                                    ) == PackageManager.PERMISSION_GRANTED
 
-                        // Speech Mic Button
-                        IconButton(
-                            onClick = {
-                                val hasAudioPermission = ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECORD_AUDIO
-                                ) == PackageManager.PERMISSION_GRANTED
-
-                                if (hasAudioPermission) {
-                                    viewModel.startVoiceRecording()
-                                } else {
-                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(SurfaceElevated)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice Input",
-                                tint = AccentCyan,
-                                modifier = Modifier.size(20.dp)
-                            )
+                                    if (hasAudioPermission) {
+                                        viewModel.startVoiceRecording()
+                                    } else {
+                                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(SurfaceElevated)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Voice Input",
+                                    tint = AccentCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
 
                         // Send Button
@@ -538,7 +538,7 @@ fun ChatScreen(
                             onClick = { viewModel.sendUserMessage() },
                             enabled = canSend,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (canSend) {
