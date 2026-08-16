@@ -163,14 +163,30 @@ class SessionRepository(
     fun addMessage(message: Message) {
         val currentMap = _messagesMap.value.toMutableMap()
         val list = currentMap[message.sessionId] ?: emptyList()
-        val existingIndex = list.indexOfFirst { it.id == message.id }
 
-        if (existingIndex >= 0) {
-            val updated = list.toMutableList()
-            updated[existingIndex] = message
-            currentMap[message.sessionId] = updated
-        } else {
+        if (message.sender == MessageSender.USER) {
+            // User message -> always append new user bubble
             currentMap[message.sessionId] = list + message
+        } else {
+            // Agent response:
+            val existingIndex = list.indexOfFirst { it.id == message.id }
+            if (existingIndex >= 0) {
+                // If message with same ID exists, update it in place
+                val updated = list.toMutableList()
+                updated[existingIndex] = message
+                currentMap[message.sessionId] = updated
+            } else {
+                val lastMsg = list.lastOrNull()
+                if (lastMsg != null && lastMsg.sender == MessageSender.AGENT) {
+                    // Update the current turn's agent bubble in place
+                    val updated = list.toMutableList()
+                    updated[updated.size - 1] = message.copy(id = lastMsg.id)
+                    currentMap[message.sessionId] = updated
+                } else {
+                    // Last message was USER -> spawn new Agent bubble for this turn
+                    currentMap[message.sessionId] = list + message
+                }
+            }
         }
         _messagesMap.value = currentMap
     }

@@ -394,7 +394,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         val currentSession = activeSession.value ?: return
 
-        // 1. Spawn User Chat Bubble
+        // 1. Add User Chat Bubble
         val userMessage = Message(
             id = java.util.UUID.randomUUID().toString(),
             sessionId = currentSession.id,
@@ -410,17 +410,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _inputText.value = ""
         _pendingAttachments.value = emptyList()
 
-        // 3. Immediately spawn a new Agent Response Bubble for this turn
-        val pendingAgentMessage = Message(
-            id = java.util.UUID.randomUUID().toString(),
-            sessionId = currentSession.id,
-            sender = MessageSender.AGENT,
-            content = "⏳ *Executing prompt in ${currentSession.title}...*",
-            status = MessageStatus.STREAMING
-        )
-        sessionRepository.addMessage(pendingAgentMessage)
-
-        // 4. Dispatch directly to connected Herdr cluster if online, otherwise to simulator
+        // 3. Dispatch to connected Herdr daemon or simulator
         if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
             wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
         } else {
