@@ -231,7 +231,7 @@ fun ChatScreen(
                         onToggleAutoRephrase = { viewModel.toggleAutoRephrase() },
                         onOpenSettings = onOpenSettings,
                         onClearChat = { viewModel.clearChat() },
-                        onNewSession = { viewModel.openNewSessionDialog() }
+                        onNewSession = { viewModel.createNewHerdrSession() }
                     )
                 }
 
@@ -241,7 +241,7 @@ fun ChatScreen(
                     activeSessionId = activeSessionId,
                     onSelectSession = { viewModel.selectSession(it) },
                     onCloseSession = { viewModel.closeSession(it) },
-                    onNewSessionClick = { viewModel.openNewSessionDialog() }
+                    onNewSessionClick = { viewModel.createNewHerdrSession() }
                 )
 
                 // Message Thread

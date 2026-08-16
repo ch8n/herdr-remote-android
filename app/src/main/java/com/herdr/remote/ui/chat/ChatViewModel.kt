@@ -177,6 +177,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         sessionRepository.createSession(title, profile)
     }
 
+    fun createNewHerdrSession() {
+        val currentCount = sessions.value.size
+        val defaultProfile = AgentProfile.PRESET_PROFILES[0]
+        val title = "Herdr Session ${currentCount + 1}"
+        sessionRepository.createSession(title, defaultProfile)
+    }
+
     fun closeSession(sessionId: String) {
         sessionRepository.closeSession(sessionId)
     }
