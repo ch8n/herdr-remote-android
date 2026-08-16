@@ -132,63 +132,64 @@ class HerdrWebSocketClient(
 
     fun requestActiveSessions() {
         webSocket?.send("""{"type":"get_sessions"}""")
+        webSocket?.send("""{"type":"list_sessions"}""")
+        webSocket?.send("""{"type":"sync_tabs"}""")
+        webSocket?.send("""{"type":"get_tabs"}""")
+        webSocket?.send("""{"action":"get_sessions"}""")
     }
 
     private fun handleIncomingMessage(text: String) {
         scope.launch(Dispatchers.Default) {
             try {
-                val json = gson.fromJson(text, JsonObject::class.java)
-                val type = json.get("type")?.asString ?: "message"
-                val sessionId = json.get("session_id")?.asString ?: ""
+                android.util.Log.d("HerdrWS", "Incoming WS frame: $text")
 
-                when (type) {
-                    "sessions_list", "active_sessions", "sessions" -> {
-                        val sessionsList = mutableListOf<Session>()
+                // Handle root array
+                if (text.trim().startsWith("[")) {
+                    val array = gson.fromJson(text, com.google.gson.JsonArray::class.java)
+                    val sessions = parseSessionArray(array)
+                    if (sessions.isNotEmpty()) {
+                        _events.emit(HerdrServerEvent.ActiveSessionsReceived(sessions))
+                    }
+                    return@launch
+                }
+
+                val json = gson.fromJson(text, JsonObject::class.java)
+                val type = json.get("type")?.asString ?: json.get("event")?.asString ?: json.get("action")?.asString ?: json.get("op")?.asString ?: "message"
+                val sessionId = json.get("session_id")?.asString ?: json.get("sessionId")?.asString ?: json.get("tab_id")?.asString ?: json.get("tabId")?.asString ?: ""
+
+                when (type.lowercase()) {
+                    "sessions_list", "active_sessions", "sessions", "list_sessions", "tabs", "tabs_list", "tab_list", "sync_tabs", "sync", "snapshot", "state", "init", "hello_ack", "get_sessions", "get_tabs" -> {
                         val array = when {
                             json.has("sessions") && json.get("sessions").isJsonArray -> json.getAsJsonArray("sessions")
+                            json.has("tabs") && json.get("tabs").isJsonArray -> json.getAsJsonArray("tabs")
                             json.has("data") && json.get("data").isJsonArray -> json.getAsJsonArray("data")
+                            json.has("payload") && json.get("payload").isJsonArray -> json.getAsJsonArray("payload")
+                            json.has("items") && json.get("items").isJsonArray -> json.getAsJsonArray("items")
+                            json.has("active_sessions") && json.get("active_sessions").isJsonArray -> json.getAsJsonArray("active_sessions")
+                            json.has("activeSessions") && json.get("activeSessions").isJsonArray -> json.getAsJsonArray("activeSessions")
+                            json.has("open_tabs") && json.get("open_tabs").isJsonArray -> json.getAsJsonArray("open_tabs")
+                            json.has("openTabs") && json.get("openTabs").isJsonArray -> json.getAsJsonArray("openTabs")
                             else -> null
                         }
 
-                        if (array != null) {
-                            for (item in array) {
-                                if (item.isJsonObject) {
-                                    val obj = item.asJsonObject
-                                    val id = obj.get("id")?.asString ?: obj.get("session_id")?.asString ?: UUID.randomUUID().toString()
-                                    val title = obj.get("title")?.asString ?: obj.get("name")?.asString ?: "Remote Agent"
-                                    val role = obj.get("role")?.asString ?: "Autonomous Agent"
-                                    val model = obj.get("model")?.asString
-                                    val statusStr = obj.get("status")?.asString ?: "ONLINE"
-
-                                    val status = when (statusStr.uppercase()) {
-                                        "THINKING" -> AgentConnectionStatus.THINKING
-                                        "EXECUTING_TOOL" -> AgentConnectionStatus.EXECUTING_TOOL
-                                        "STREAMING" -> AgentConnectionStatus.STREAMING
-                                        "OFFLINE" -> AgentConnectionStatus.OFFLINE
-                                        else -> AgentConnectionStatus.ONLINE
-                                    }
-
-                                    val profile = AgentProfile(
-                                        id = "remote_${id.take(8)}",
-                                        name = title,
-                                        role = role,
-                                        avatarEmoji = if (title.contains("code", true)) "⚡" else if (title.contains("research", true)) "🔬" else "🤖",
-                                        systemPrompt = "Remote Herdr agent session",
-                                        defaultModel = model ?: "openrouter/auto"
-                                    )
-
-                                    sessionsList.add(
-                                        Session(
-                                            id = id,
-                                            title = title,
-                                            agentProfile = profile,
-                                            status = status,
-                                            statusDetail = "Remote Herdr Session • $statusStr",
-                                            modelOverride = model
-                                        )
-                                    )
+                        val sessionsList = if (array != null) {
+                            parseSessionArray(array)
+                        } else {
+                            // Check if dictionary mapping of sessions { "tab-1": {...}, "tab-2": {...} }
+                            val list = mutableListOf<Session>()
+                            val containerObj = when {
+                                json.has("sessions") && json.get("sessions").isJsonObject -> json.getAsJsonObject("sessions")
+                                json.has("tabs") && json.get("tabs").isJsonObject -> json.getAsJsonObject("tabs")
+                                json.has("data") && json.get("data").isJsonObject -> json.getAsJsonObject("data")
+                                else -> null
+                            }
+                            containerObj?.keySet()?.forEach { key ->
+                                val child = containerObj.get(key)
+                                if (child.isJsonObject) {
+                                    parseSingleSession(child.asJsonObject, defaultId = key)?.let { list.add(it) }
                                 }
                             }
+                            list
                         }
 
                         if (sessionsList.isNotEmpty()) {
@@ -196,13 +197,25 @@ class HerdrWebSocketClient(
                         }
                     }
 
-                    "stream_chunk" -> {
-                        val chunk = json.get("chunk")?.asString ?: ""
+                    "tab_opened", "tab_created", "session_created", "session_opened" -> {
+                        val sessionObj = when {
+                            json.has("session") && json.get("session").isJsonObject -> json.getAsJsonObject("session")
+                            json.has("tab") && json.get("tab").isJsonObject -> json.getAsJsonObject("tab")
+                            json.has("data") && json.get("data").isJsonObject -> json.getAsJsonObject("data")
+                            else -> json
+                        }
+                        parseSingleSession(sessionObj)?.let { newSession ->
+                            _events.emit(HerdrServerEvent.ActiveSessionsReceived(listOf(newSession)))
+                        }
+                    }
+
+                    "stream_chunk", "chunk", "content_chunk" -> {
+                        val chunk = json.get("chunk")?.asString ?: json.get("content")?.asString ?: json.get("text")?.asString ?: ""
                         _events.emit(HerdrServerEvent.StreamChunk(sessionId, chunk))
                     }
-                    "agent_status" -> {
+                    "agent_status", "status" -> {
                         val statusStr = json.get("status")?.asString ?: "ONLINE"
-                        val detail = json.get("detail")?.asString ?: ""
+                        val detail = json.get("detail")?.asString ?: json.get("message")?.asString ?: ""
                         val status = when (statusStr.uppercase()) {
                             "THINKING" -> AgentConnectionStatus.THINKING
                             "EXECUTING_TOOL" -> AgentConnectionStatus.EXECUTING_TOOL
@@ -212,9 +225,9 @@ class HerdrWebSocketClient(
                         }
                         _events.emit(HerdrServerEvent.AgentStatusChanged(sessionId, status, detail))
                     }
-                    "tool_started" -> {
-                        val toolName = json.get("tool_name")?.asString ?: "tool"
-                        val args = json.get("args")?.toString() ?: "{}"
+                    "tool_started", "tool_start" -> {
+                        val toolName = json.get("tool_name")?.asString ?: json.get("name")?.asString ?: "tool"
+                        val args = json.get("args")?.toString() ?: json.get("arguments")?.toString() ?: "{}"
                         val tool = ToolExecution(
                             toolName = toolName,
                             argumentsJson = args,
@@ -222,11 +235,11 @@ class HerdrWebSocketClient(
                         )
                         _events.emit(HerdrServerEvent.ToolStarted(sessionId, tool))
                     }
-                    "tool_finished" -> {
-                        val toolName = json.get("tool_name")?.asString ?: "tool"
-                        val args = json.get("args")?.toString() ?: "{}"
-                        val result = json.get("result")?.toString() ?: "{}"
-                        val duration = json.get("duration_ms")?.asLong ?: 200L
+                    "tool_finished", "tool_finish", "tool_complete" -> {
+                        val toolName = json.get("tool_name")?.asString ?: json.get("name")?.asString ?: "tool"
+                        val args = json.get("args")?.toString() ?: json.get("arguments")?.toString() ?: "{}"
+                        val result = json.get("result")?.toString() ?: json.get("output")?.toString() ?: "{}"
+                        val duration = json.get("duration_ms")?.asLong ?: json.get("duration")?.asLong ?: 200L
                         val tool = ToolExecution(
                             toolName = toolName,
                             argumentsJson = args,
@@ -236,9 +249,9 @@ class HerdrWebSocketClient(
                         )
                         _events.emit(HerdrServerEvent.ToolFinished(sessionId, tool))
                     }
-                    "message_complete" -> {
-                        val content = json.get("content")?.asString ?: ""
-                        val thought = json.get("thought")?.asString
+                    "message_complete", "message", "chat_message" -> {
+                        val content = json.get("content")?.asString ?: json.get("text")?.asString ?: json.get("response")?.asString ?: ""
+                        val thought = json.get("thought")?.asString ?: json.get("reasoning")?.asString
                         val message = Message(
                             sessionId = sessionId,
                             sender = MessageSender.AGENT,
@@ -250,8 +263,71 @@ class HerdrWebSocketClient(
                     }
                 }
             } catch (e: Exception) {
-                // Ignore malformed raw frames
+                android.util.Log.e("HerdrWS", "Error handling frame: ${e.localizedMessage}")
             }
         }
+    }
+
+    private fun parseSessionArray(array: com.google.gson.JsonArray): List<Session> {
+        val list = mutableListOf<Session>()
+        for (item in array) {
+            if (item.isJsonObject) {
+                parseSingleSession(item.asJsonObject)?.let { list.add(it) }
+            }
+        }
+        return list
+    }
+
+    private fun parseSingleSession(obj: JsonObject, defaultId: String? = null): Session? {
+        val id = obj.get("id")?.asString
+            ?: obj.get("session_id")?.asString
+            ?: obj.get("sessionId")?.asString
+            ?: obj.get("tab_id")?.asString
+            ?: obj.get("tabId")?.asString
+            ?: defaultId
+            ?: UUID.randomUUID().toString()
+
+        val title = obj.get("title")?.asString
+            ?: obj.get("name")?.asString
+            ?: obj.get("label")?.asString
+            ?: obj.get("tab_name")?.asString
+            ?: obj.get("tabName")?.asString
+            ?: obj.get("agent_name")?.asString
+            ?: "Remote Agent"
+
+        val role = obj.get("role")?.asString ?: "Autonomous Agent"
+        val model = obj.get("model")?.asString
+        val statusStr = obj.get("status")?.asString ?: "ONLINE"
+
+        val status = when (statusStr.uppercase()) {
+            "THINKING" -> AgentConnectionStatus.THINKING
+            "EXECUTING_TOOL" -> AgentConnectionStatus.EXECUTING_TOOL
+            "STREAMING" -> AgentConnectionStatus.STREAMING
+            "OFFLINE" -> AgentConnectionStatus.OFFLINE
+            else -> AgentConnectionStatus.ONLINE
+        }
+
+        val profile = AgentProfile(
+            id = "remote_${id.take(8)}",
+            name = title,
+            role = role,
+            avatarEmoji = when {
+                title.contains("code", true) || role.contains("engineer", true) -> "⚡"
+                title.contains("research", true) || role.contains("research", true) -> "🔬"
+                title.contains("review", true) -> "🎯"
+                else -> "🤖"
+            },
+            systemPrompt = "Remote Herdr agent session",
+            defaultModel = model ?: "openrouter/auto"
+        )
+
+        return Session(
+            id = id,
+            title = title,
+            agentProfile = profile,
+            status = status,
+            statusDetail = "Remote Herdr Session • $statusStr",
+            modelOverride = model
+        )
     }
 }

@@ -175,7 +175,7 @@ class SessionRepository {
                             id = UUID.randomUUID().toString(),
                             sessionId = remote.id,
                             sender = MessageSender.AGENT,
-                            content = "⚡ Synced active session **${remote.title}** from Herdr node.\nAgent role: *${remote.agentProfile.role}*",
+                            content = "⚡ Synced active desktop session **${remote.title}** from Herdr node.\nAgent role: *${remote.agentProfile.role}*",
                             status = MessageStatus.SENT
                         )
                     )
@@ -184,14 +184,16 @@ class SessionRepository {
             }
         }
 
-        // Keep any active local sessions that were not in remote list
-        val localPreserved = currentList.filter { local -> remoteSessions.none { it.id == local.id } }
+        // Keep active local sessions that were not in remote list, excluding initial placeholder default_cluster
+        val localPreserved = currentList.filter { local ->
+            local.id != "default_cluster" && remoteSessions.none { it.id == local.id }
+        }
         val mergedSessions = (newSessionsList + localPreserved).distinctBy { it.id }
 
         _sessions.value = mergedSessions
 
-        // Ensure active session pointer is valid
-        if (mergedSessions.none { it.id == _activeSessionId.value }) {
+        // Switch to the first synced remote tab if on default_cluster or if active session is missing
+        if (_activeSessionId.value == "default_cluster" || mergedSessions.none { it.id == _activeSessionId.value }) {
             _activeSessionId.value = mergedSessions.first().id
         }
     }
