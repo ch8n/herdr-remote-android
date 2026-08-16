@@ -3,11 +3,11 @@
 Herdr Remote WebSocket Bridge & Real-Time Bi-Directional Workspace Sync Daemon
 Bridges ~/.config/herdr/herdr.sock to WebSocket on port 8765.
 
-Real-Time Output Streaming & Queued Turn Isolation:
-- When a user sends a message, a snapshot baseline of the terminal is captured immediately.
-- The new agent chat bubble appears instantly in 'Processing/Streaming' state.
-- Output produced in the terminal streams LIVE into the new agent chat bubble in real time.
-- Turn history from previous turns is preserved without pollution or duplication.
+Full-Fidelity Unwrapped Turn Streaming & Zero Truncation:
+- Uses unwrapped scrollback reader (`herdr pane read <pane> --lines 800 --source recent-unwrapped`).
+- Accurately captures and streams the complete full turn output without trimming.
+- Automatically isolates turns by prompt boundary markers.
+- Live real-time streaming to the active agent bubble.
 - Full bi-directional tab synchronization & exact 1-to-1 tab naming.
 """
 
@@ -25,6 +25,7 @@ import websockets
 HERDR_SOCK_PATH = os.path.expanduser("~/.config/herdr/herdr.sock")
 WS_PORT = 8765
 
+pane_turn_prompts = {}
 pane_turn_baselines = {}
 pane_last_streamed = {}
 
@@ -53,60 +54,64 @@ def clean_terminal_buffer(raw_text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     text = ansi_escape.sub('', raw_text)
     
-    lines = text.splitlines()
-    cleaned = []
-    prev_was_hr = False
-    
-    for line in lines:
-        stripped = line.strip()
-        is_hr = bool(stripped) and all(c in '─━═-_~' for c in stripped) and len(stripped) >= 3
-        if is_hr:
-            if not prev_was_hr:
-                cleaned.append("────────────────────────────────")
-                prev_was_hr = True
-        else:
-            prev_was_hr = False
-            cleaned.append(line)
-            
-    return "\n".join(cleaned)
+    lines = []
+    for line in text.splitlines():
+        l = line.strip()
+        # Filter out UI chrome and interactive footers
+        if "esc to cancel" in l or "Tip: " in l or "Loading..." in l or "Running..." in l:
+            continue
+        if l.startswith("● [") and "running" in l:
+            continue
+        lines.append(line)
+        
+    return "\n".join(lines)
 
-def read_pane_terminal(pane_id):
+def read_pane_terminal(pane_id, lines=800):
     try:
         res = subprocess.run(
-            ["/Users/chetan/.local/bin/herdr", "pane", "read", pane_id],
+            ["/Users/chetan/.local/bin/herdr", "pane", "read", pane_id, "--lines", str(lines), "--source", "recent-unwrapped"],
             capture_output=True,
             text=True,
-            timeout=2.0
+            timeout=2.5
         )
         if res.returncode == 0 and res.stdout:
-            cleaned = clean_terminal_buffer(res.stdout.strip())
+            cleaned = clean_terminal_buffer(res.stdout)
             return cleaned
     except Exception:
         pass
     return ""
 
 def get_pane_turn_output(pane_id):
-    full_output = read_pane_terminal(pane_id)
+    full_output = read_pane_terminal(pane_id, lines=800)
     if not full_output:
         return ""
     
+    last_prompt = pane_turn_prompts.get(pane_id, "").strip()
+    if last_prompt:
+        # 1. Exact prompt boundary extraction
+        prompt_snippet = last_prompt[:35]
+        marker = f"> {prompt_snippet}"
+        pos = full_output.rfind(marker)
+        if pos != -1:
+            end_line = full_output.find("\n", pos)
+            if end_line != -1:
+                turn_text = full_output[end_line + 1:]
+                # If there's a subsequent prompt marker, trim up to it
+                next_prompt = turn_text.find("\n> ")
+                if next_prompt != -1:
+                    turn_text = turn_text[:next_prompt]
+                return turn_text.strip("\n")
+            else:
+                return full_output[pos + len(marker):].strip("\n")
+                
+    # 2. Baseline fallback
     baseline = pane_turn_baselines.get(pane_id)
-    if baseline is None:
-        return "\n".join(full_output.splitlines()[-40:])
-    
     if baseline and full_output.startswith(baseline):
         turn_delta = full_output[len(baseline):].strip("\n")
         return turn_delta
     
-    base_lines = baseline.splitlines()
-    curr_lines = full_output.splitlines()
-    
-    if len(curr_lines) >= len(base_lines) and curr_lines[:len(base_lines)] == base_lines:
-        delta_lines = curr_lines[len(base_lines):]
-        turn_delta = "\n".join(delta_lines).strip()
-        return turn_delta
-    
-    return "\n".join(full_output.splitlines()[-35:])
+    # 3. Buffer fallback: return full output
+    return full_output.strip("\n")
 
 def submit_prompt_to_pane(pane_id, prompt_text):
     print(f"[HerdrBridge] Dispatching prompt/command to pane {pane_id}: {prompt_text}")
@@ -218,7 +223,7 @@ async def live_terminal_watcher(websocket, client_ip):
     
     try:
         while True:
-            await asyncio.sleep(0.12)  # Fast 120ms real-time streaming loop
+            await asyncio.sleep(0.12)
             
             payload = get_synced_sessions_payload()
             sessions = payload.get("sessions", [])
@@ -252,7 +257,6 @@ async def live_terminal_watcher(websocket, client_ip):
                 if pane_last_streamed.get(tab_id) != out_hash:
                     pane_last_streamed[tab_id] = out_hash
                     
-                    # Stream live turn output
                     await websocket.send(json.dumps({
                         "type": "stream_turn_update",
                         "session_id": tab_id,
@@ -355,8 +359,9 @@ async def handle_client(websocket):
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == session_id), {})
                     pane_id = session.get("pane_id") or session_id
                     
-                    # 1. Take snapshot of current terminal buffer as baseline for this new turn
-                    current_term = read_pane_terminal(pane_id)
+                    # 1. Record user prompt boundary and terminal baseline
+                    pane_turn_prompts[pane_id] = content
+                    current_term = read_pane_terminal(pane_id, lines=800)
                     pane_turn_baselines[pane_id] = current_term
                     pane_last_streamed[session_id] = ""
                     
