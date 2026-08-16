@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-class SessionRepository {
+class SessionRepository(
+    private val settingsRepository: SettingsRepository? = null
+) {
 
     private val _sessions = MutableStateFlow<List<Session>>(emptyList())
     val sessions: StateFlow<List<Session>> = _sessions.asStateFlow()
@@ -56,7 +58,8 @@ How can I assist your workflow today?
         )
 
         _sessions.value = listOf(initialSession)
-        _activeSessionId.value = initialSession.id
+        val savedSessionId = settingsRepository?.getLastActiveSessionId() ?: ""
+        _activeSessionId.value = if (savedSessionId.isNotBlank()) savedSessionId else initialSession.id
         _messagesMap.value = mapOf(initialSession.id to listOf(welcomeMessage))
     }
 
@@ -84,6 +87,7 @@ How can I assist your workflow today?
 
         _sessions.value = _sessions.value + newSession
         _activeSessionId.value = newSession.id
+        settingsRepository?.saveLastActiveSession(newSession.id, newSession.title)
 
         val currentMessages = _messagesMap.value.toMutableMap()
         currentMessages[newSession.id] = listOf(introMessage)
@@ -93,8 +97,10 @@ How can I assist your workflow today?
     }
 
     fun switchSession(sessionId: String) {
-        if (_sessions.value.any { it.id == sessionId }) {
+        val session = _sessions.value.find { it.id == sessionId }
+        if (session != null) {
             _activeSessionId.value = sessionId
+            settingsRepository?.saveLastActiveSession(session.id, session.title)
             ensureSessionMessages(sessionId)
         }
     }
@@ -161,6 +167,7 @@ How can I assist your workflow today?
         if (_activeSessionId.value == sessionId) {
             val nextId = updatedList.last().id
             _activeSessionId.value = nextId
+            settingsRepository?.saveLastActiveSessionId(nextId)
             ensureSessionMessages(nextId)
         }
     }
@@ -186,23 +193,14 @@ How can I assist your workflow today?
     fun addMessage(message: Message) {
         val currentMap = _messagesMap.value.toMutableMap()
         val list = currentMap[message.sessionId] ?: emptyList()
+        val existingIndex = list.indexOfFirst { it.id == message.id }
 
-        if (message.sender == MessageSender.USER) {
-            // User message -> always spawn a new user chat bubble
-            currentMap[message.sessionId] = list + message
+        if (existingIndex >= 0) {
+            val updated = list.toMutableList()
+            updated[existingIndex] = message
+            currentMap[message.sessionId] = updated
         } else {
-            // Agent response / Terminal streaming:
-            val lastMsg = list.lastOrNull()
-            if (lastMsg != null && lastMsg.sender == MessageSender.AGENT) {
-                // If current active bubble in turn is already AGENT -> update in place
-                val updated = list.toMutableList()
-                updated[updated.size - 1] = message.copy(id = lastMsg.id)
-                currentMap[message.sessionId] = updated
-            } else {
-                // If last message was USER (or thread is empty) -> spawn a NEW agent bubble for this turn
-                val newAgentMsg = message.copy(id = UUID.randomUUID().toString())
-                currentMap[message.sessionId] = list + newAgentMsg
-            }
+            currentMap[message.sessionId] = list + message
         }
         _messagesMap.value = currentMap
     }
@@ -210,21 +208,62 @@ How can I assist your workflow today?
     fun updateMessage(message: Message) {
         val currentMap = _messagesMap.value.toMutableMap()
         val list = currentMap[message.sessionId] ?: emptyList()
-        val updatedList = list.map { if (it.id == message.id) message else it }
-        currentMap[message.sessionId] = updatedList
-        _messagesMap.value = currentMap
+        val existingIndex = list.indexOfFirst { it.id == message.id }
+        if (existingIndex >= 0) {
+            val updatedList = list.toMutableList()
+            updatedList[existingIndex] = message
+            currentMap[message.sessionId] = updatedList
+            _messagesMap.value = currentMap
+        } else {
+            addMessage(message)
+        }
     }
 
     fun appendStreamChunkToLastAgentMessage(sessionId: String, chunk: String) {
         val currentMap = _messagesMap.value.toMutableMap()
-        val list = currentMap[sessionId] ?: return
-        val lastMsg = list.lastOrNull { it.sender == MessageSender.AGENT && it.status == MessageStatus.STREAMING }
+        val list = currentMap[sessionId] ?: emptyList()
+        val lastMsg = list.lastOrNull()
 
-        if (lastMsg != null) {
+        if (lastMsg != null && lastMsg.sender == MessageSender.AGENT && lastMsg.status == MessageStatus.STREAMING) {
+            // Append to the active streaming bubble in the current turn
             val updatedMsg = lastMsg.copy(content = lastMsg.content + chunk)
-            val updatedList = list.map { if (it.id == lastMsg.id) updatedMsg else it }
+            val updatedList = list.toMutableList()
+            updatedList[updatedList.size - 1] = updatedMsg
             currentMap[sessionId] = updatedList
             _messagesMap.value = currentMap
+        } else {
+            // Spawn a brand new streaming agent bubble after the user message
+            val newAgentMsg = Message(
+                id = UUID.randomUUID().toString(),
+                sessionId = sessionId,
+                sender = MessageSender.AGENT,
+                content = chunk,
+                status = MessageStatus.STREAMING
+            )
+            currentMap[sessionId] = list + newAgentMsg
+            _messagesMap.value = currentMap
+        }
+    }
+
+    fun addOrCompleteAgentMessage(message: Message) {
+        val currentMap = _messagesMap.value.toMutableMap()
+        val list = currentMap[message.sessionId] ?: emptyList()
+        val lastMsg = list.lastOrNull()
+
+        if (lastMsg != null && lastMsg.sender == MessageSender.AGENT && lastMsg.status == MessageStatus.STREAMING) {
+            // Finalize the active streaming bubble for this turn
+            val finalized = lastMsg.copy(
+                content = if (message.content.isNotBlank()) message.content else lastMsg.content,
+                thought = message.thought ?: lastMsg.thought,
+                status = MessageStatus.SENT
+            )
+            val updatedList = list.toMutableList()
+            updatedList[updatedList.size - 1] = finalized
+            currentMap[message.sessionId] = updatedList
+            _messagesMap.value = currentMap
+        } else {
+            // Spawn a new agent message bubble
+            addMessage(message)
         }
     }
 
@@ -290,12 +329,27 @@ How can I assist your workflow today?
         _sessions.value = mergedSessions
         _messagesMap.value = currentMessages
 
-        // Switch to the first synced remote tab if active session is missing
-        if (mergedSessions.none { it.id == _activeSessionId.value }) {
-            val firstId = mergedSessions.first().id
-            _activeSessionId.value = firstId
-            ensureSessionMessages(firstId)
+        // After desktop sync is done: if it contains the last selected tab (by ID or Title), open and select it!
+        val savedSessionId = settingsRepository?.getLastActiveSessionId() ?: ""
+        val savedSessionTitle = settingsRepository?.getLastActiveSessionTitle() ?: ""
+
+        val matchedSession = mergedSessions.find { session ->
+            (savedSessionId.isNotBlank() && session.id == savedSessionId) ||
+            (savedSessionTitle.isNotBlank() && session.title.equals(savedSessionTitle, ignoreCase = true))
+        } ?: if (_activeSessionId.value.isNotBlank() && _activeSessionId.value != "default_cluster") {
+            mergedSessions.find { it.id == _activeSessionId.value }
+        } else {
+            null
         }
+
+        val targetSession = matchedSession
+            ?: remoteSessions.firstOrNull()
+            ?: mergedSessions.first()
+
+        val targetActiveId = targetSession.id
+        _activeSessionId.value = targetActiveId
+        settingsRepository?.saveLastActiveSession(targetActiveId, targetSession.title)
+        ensureSessionMessages(targetActiveId)
     }
 }
 

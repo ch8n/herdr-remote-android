@@ -28,8 +28,8 @@ class HerdrApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        sessionRepository = SessionRepository()
         settingsRepository = SettingsRepository(this)
+        sessionRepository = SessionRepository(settingsRepository)
         NotificationHelper.initNotificationChannel(this)
     }
 

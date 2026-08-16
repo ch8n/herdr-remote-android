@@ -164,12 +164,30 @@ fun ChatScreen(
         }
     }
 
-    // Reset unread state on tab switch (no auto-scroll)
-    LaunchedEffect(activeSessionId) {
+    // On tab switch or restoration from desktop sync: show tab's chat and position at end
+    LaunchedEffect(activeSessionId, messages.isNotEmpty()) {
         hasUnreadMessagesBelow = false
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(
+                index = (messages.size - 1).coerceAtLeast(0),
+                scrollOffset = 100_000
+            )
+        }
     }
 
-    // When new messages or streaming updates arrive (no auto-scroll, only update red dot badge)
+    // Scroll to bottom immediately when user sends a message
+    LaunchedEffect(messages.size, messages.lastOrNull()?.id) {
+        val lastMsg = messages.lastOrNull()
+        if (lastMsg != null && lastMsg.sender == com.herdr.remote.data.model.MessageSender.USER) {
+            hasUnreadMessagesBelow = false
+            listState.animateScrollToItem(
+                index = (messages.size - 1).coerceAtLeast(0),
+                scrollOffset = 100_000
+            )
+        }
+    }
+
+    // When new messages or streaming updates arrive from agent/system (update red dot badge if not at bottom)
     var lastKnownMessageSize by remember { mutableStateOf(messages.size) }
     var lastKnownMessageContent by remember { mutableStateOf(messages.lastOrNull()?.content ?: "") }
 
@@ -182,8 +200,11 @@ fun ChatScreen(
         lastKnownMessageContent = currentContent
 
         if (isNewContent && messages.isNotEmpty()) {
-            if (!isAtBottom) {
-                // When new content arrives and user is not at bottom, show red dot alert
+            val lastMsg = messages.lastOrNull()
+            if (lastMsg != null && lastMsg.sender == com.herdr.remote.data.model.MessageSender.USER) {
+                listState.animateScrollToItem(messages.size - 1)
+            } else if (!isAtBottom) {
+                // When new agent content arrives and user is scrolled up, show red dot alert
                 hasUnreadMessagesBelow = true
             }
         }
@@ -415,9 +436,8 @@ fun ChatScreen(
                         }
                     }
 
-                    // Jump to Bottom FAB
-                    // Jump to Bottom FAB with Unread Red Dot Alert
-                    if (showScrollToBottom) {
+                    // Jump to Bottom FAB with Unread Red Dot Alert (always visible)
+                    if (messages.isNotEmpty()) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -619,7 +639,14 @@ fun ChatScreen(
                         // Send Button
                         val canSend = inputText.isNotBlank() || pendingAttachments.isNotEmpty()
                         IconButton(
-                            onClick = { viewModel.sendUserMessage() },
+                            onClick = {
+                                viewModel.sendUserMessage()
+                                scope.launch {
+                                    if (messages.isNotEmpty()) {
+                                        listState.animateScrollToItem(messages.size - 1)
+                                    }
+                                }
+                            },
                             enabled = canSend,
                             modifier = Modifier
                                 .size(38.dp)

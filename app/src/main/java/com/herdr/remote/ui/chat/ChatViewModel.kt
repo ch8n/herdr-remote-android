@@ -169,7 +169,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         sessionRepository.updateSessionStatus(event.sessionId, event.status, event.detail)
                     }
                     is HerdrServerEvent.MessageComplete -> {
-                        sessionRepository.addMessage(event.message)
+                        sessionRepository.addOrCompleteAgentMessage(event.message)
                         val targetSession = sessions.value.find { it.id == event.message.sessionId }
                         if (targetSession != null) {
                             com.herdr.remote.util.NotificationHelper.sendTaskCompletedNotification(
@@ -386,18 +386,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Message Sending & Agent Dispatch
-    fun sendUserMessage(content: String = _inputText.value, originalSpoken: String? = null) {
-        val trimmed = content.trim()
+    fun sendUserMessage(content: String? = null, originalSpoken: String? = null) {
+        val textToSend = (content ?: _inputText.value).trim()
         val attachmentsToSend = _pendingAttachments.value.toList()
 
-        if (trimmed.isEmpty() && attachmentsToSend.isEmpty()) return
+        if (textToSend.isEmpty() && attachmentsToSend.isEmpty()) return
 
-        val currentSession = activeSession.value ?: return
+        val targetSessionId = activeSessionId.value.ifBlank {
+            activeSession.value?.id ?: sessions.value.firstOrNull()?.id ?: "default_cluster"
+        }
+        val targetSession = sessions.value.find { it.id == targetSessionId }
+            ?: activeSession.value
+            ?: sessions.value.firstOrNull()
 
         val userMessage = Message(
-            sessionId = currentSession.id,
+            id = java.util.UUID.randomUUID().toString(),
+            sessionId = targetSessionId,
             sender = MessageSender.USER,
-            content = trimmed,
+            content = textToSend,
             attachments = attachmentsToSend,
             originalSpokenText = originalSpoken,
             status = MessageStatus.SENT
@@ -411,9 +417,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Dispatch directly to connected Herdr cluster if online, otherwise to simulator
         if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
-            wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
-        } else {
-            dispatchToSimulator(currentSession, userMessage)
+            wsClient.sendMessage(targetSessionId, textToSend, attachmentsToSend)
+        } else if (targetSession != null) {
+            dispatchToSimulator(targetSession, userMessage)
         }
     }
 

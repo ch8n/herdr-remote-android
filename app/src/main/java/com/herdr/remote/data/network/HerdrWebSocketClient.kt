@@ -290,7 +290,7 @@ class HerdrWebSocketClient(
                         _events.emit(HerdrServerEvent.ToolFinished(sessionId, tool))
                     }
                     "message_complete", "message", "chat_message" -> {
-                        val msgId = json.get("id")?.asString ?: json.get("message_id")?.asString ?: "agent_msg_$sessionId"
+                        val msgId = json.get("id")?.asString ?: json.get("message_id")?.asString ?: UUID.randomUUID().toString()
                         val content = json.get("content")?.asString ?: json.get("text")?.asString ?: json.get("response")?.asString ?: ""
                         val thought = json.get("thought")?.asString ?: json.get("reasoning")?.asString
                         val message = Message(

@@ -59,6 +59,28 @@ class SettingsRepository(context: Context) {
         updateSettings(updated)
     }
 
+    fun getLastActiveSessionId(): String {
+        return prefs.getString(KEY_LAST_ACTIVE_SESSION, "") ?: ""
+    }
+
+    fun getLastActiveSessionTitle(): String {
+        return prefs.getString(KEY_LAST_ACTIVE_TITLE, "") ?: ""
+    }
+
+    fun saveLastActiveSession(sessionId: String, title: String = "") {
+        if (sessionId.isNotBlank()) {
+            val editor = prefs.edit().putString(KEY_LAST_ACTIVE_SESSION, sessionId)
+            if (title.isNotBlank()) {
+                editor.putString(KEY_LAST_ACTIVE_TITLE, title)
+            }
+            editor.apply()
+        }
+    }
+
+    fun saveLastActiveSessionId(sessionId: String) {
+        saveLastActiveSession(sessionId, "")
+    }
+
     companion object {
         private const val KEY_OPENROUTER_API_KEY = "openrouter_api_key"
         private const val KEY_OPENROUTER_MODEL = "openrouter_model"
@@ -68,5 +90,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_REPHRASE_PROMPT = "rephrase_system_prompt"
         private const val KEY_AGENT_TEMPERATURE = "agent_temperature"
         private const val KEY_SPEECH_LANGUAGE = "speech_language"
+        private const val KEY_LAST_ACTIVE_SESSION = "last_active_session_id"
+        private const val KEY_LAST_ACTIVE_TITLE = "last_active_session_title"
     }
 }

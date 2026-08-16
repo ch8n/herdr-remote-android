@@ -24,7 +24,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +56,16 @@ fun SessionTabsBar(
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    val activeIndex = remember(sessions, activeSessionId) {
+        sessions.indexOfFirst { it.id == activeSessionId }
+    }
+
+    LaunchedEffect(activeSessionId, sessions.size) {
+        if (activeIndex >= 0) {
+            val targetOffset = (activeIndex * 140 - 60).coerceAtLeast(0)
+            scrollState.animateScrollTo(targetOffset)
+        }
+    }
 
     Row(
         modifier = modifier
