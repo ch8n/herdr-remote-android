@@ -5,9 +5,9 @@ Bridges ~/.config/herdr/herdr.sock to a WebSocket server on port 8765.
 Features:
 - Submits prompts to agent if agent is running
 - If NO agent is running, submits command directly to bash / zsh shell with Enter execution
-- Real-time live polling (400ms) to stream terminal character/line changes directly to Android
+- Streams clean agent output and terminal output directly to Android
+- Preserves markdown formatting so code blocks are rendered as cards and text as Compose typography
 - Real-time tab sync when new tabs open or close on desktop
-- Clean ANSI & duplicate box-drawing horizontal lines filtering
 """
 
 import asyncio
@@ -82,11 +82,6 @@ def read_pane_terminal(pane_id):
     return ""
 
 def submit_prompt_to_pane(pane_id, prompt_text):
-    """
-    Submits command or prompt to pane:
-    - If an active AI agent is registered -> submits via agent prompt.
-    - If NO agent is running (plain bash/zsh shell) -> submits directly to bash shell and executes with Enter.
-    """
     print(f"[HerdrBridge] Dispatching prompt/command to pane {pane_id}: {prompt_text}")
     
     # 1. Check if pane has an active registered agent
@@ -108,7 +103,7 @@ def submit_prompt_to_pane(pane_id, prompt_text):
         except Exception as e:
             print(f"[HerdrBridge] Agent prompt error: {e}")
 
-    # 2. No agent running (or agent prompt not applicable) -> run directly in bash/zsh shell
+    # 2. No agent running -> run directly in bash/zsh shell
     print(f"[HerdrBridge] Submitting directly to bash/zsh shell on {pane_id}")
     try:
         res = subprocess.run(
@@ -197,7 +192,7 @@ async def live_terminal_watcher(websocket, client_ip):
                 last_tab_hash = tab_ids
                 await websocket.send(json.dumps(payload))
             
-            # 2. Check each pane for terminal output changes
+            # 2. Check each pane for output changes
             for session in sessions:
                 tab_id = session.get("id")
                 pane_id = session.get("pane_id") or tab_id
@@ -215,7 +210,7 @@ async def live_terminal_watcher(websocket, client_ip):
                         "type": "message_complete",
                         "session_id": tab_id,
                         "id": f"msg_terminal_{tab_id}",
-                        "content": f"```terminal\n{clean_output}\n```"
+                        "content": clean_output
                     }
                     await websocket.send(json.dumps(msg_payload))
     except (asyncio.CancelledError, websockets.exceptions.ConnectionClosed):
@@ -231,7 +226,7 @@ async def handle_client(websocket):
     print(f"[HerdrBridge] Dispatched {len(sessions)} desktop tabs to client")
     await websocket.send(json.dumps(initial_payload))
     
-    # 2. Initial terminal stream for all tabs
+    # 2. Initial stream for all tabs
     for session in sessions:
         tab_id = session.get("id")
         pane_id = session.get("pane_id") or tab_id
@@ -242,7 +237,7 @@ async def handle_client(websocket):
                 "type": "message_complete",
                 "session_id": tab_id,
                 "id": f"msg_terminal_{tab_id}",
-                "content": f"```terminal\n{clean_output}\n```"
+                "content": clean_output
             }))
             await asyncio.sleep(0.02)
     
@@ -251,7 +246,6 @@ async def handle_client(websocket):
     
     try:
         async for message in websocket:
-            print(f"[HerdrBridge] Incoming: {message}")
             try:
                 data = json.loads(message)
                 msg_type = data.get("type", "")
@@ -272,7 +266,7 @@ async def handle_client(websocket):
                                 "type": "message_complete",
                                 "session_id": target_id,
                                 "id": f"msg_terminal_{target_id}",
-                                "content": f"```terminal\n{clean_output}\n```"
+                                "content": clean_output
                             }))
                 elif msg_type == "user_message":
                     session_id = data.get("session_id", "")
@@ -282,32 +276,18 @@ async def handle_client(websocket):
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == session_id), {})
                     pane_id = session.get("pane_id") or session_id
                     
-                    await websocket.send(json.dumps({
-                        "type": "agent_status",
-                        "session_id": session_id,
-                        "status": "THINKING",
-                        "detail": "Running in terminal..."
-                    }))
-                    
-                    # Submit to agent if running, otherwise directly to bash
+                    # Submit command to agent/bash
                     submit_prompt_to_pane(pane_id, content)
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.4)
                     
                     updated_output = read_pane_terminal(pane_id)
-                    tail_output = "\n".join(updated_output.splitlines()[-35:]) if updated_output else "Command executed."
-                    
-                    await websocket.send(json.dumps({
-                        "type": "agent_status",
-                        "session_id": session_id,
-                        "status": "ONLINE",
-                        "detail": "Online • Ready"
-                    }))
+                    tail_output = "\n".join(updated_output.splitlines()[-45:]) if updated_output else "Command executed."
                     
                     await websocket.send(json.dumps({
                         "type": "message_complete",
                         "session_id": session_id,
                         "id": f"msg_terminal_{session_id}",
-                        "content": f"```terminal\n{tail_output}\n```"
+                        "content": tail_output
                     }))
             except Exception as e:
                 print(f"[HerdrBridge] Error processing message: {e}")
