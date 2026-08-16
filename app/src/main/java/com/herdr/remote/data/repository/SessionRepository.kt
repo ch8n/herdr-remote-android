@@ -188,27 +188,20 @@ How can I assist your workflow today?
         val list = currentMap[message.sessionId] ?: emptyList()
 
         if (message.sender == MessageSender.USER) {
-            // User message -> always create new chat bubble
+            // User message -> always spawn a new user chat bubble
             currentMap[message.sessionId] = list + message
         } else {
-            // Agent message / Real-time terminal streaming:
-            val existingIndex = list.indexOfFirst { it.id == message.id }
-            if (existingIndex >= 0) {
-                // Update existing message in place
+            // Agent response / Terminal streaming:
+            val lastMsg = list.lastOrNull()
+            if (lastMsg != null && lastMsg.sender == MessageSender.AGENT) {
+                // If current active bubble in turn is already AGENT -> update in place
                 val updated = list.toMutableList()
-                updated[existingIndex] = message
+                updated[updated.size - 1] = message.copy(id = lastMsg.id)
                 currentMap[message.sessionId] = updated
             } else {
-                val lastMsg = list.lastOrNull()
-                if (lastMsg != null && lastMsg.sender == MessageSender.AGENT) {
-                    // Update the existing agent bubble in place (no spamming)
-                    val updated = list.toMutableList()
-                    updated[updated.size - 1] = message.copy(id = lastMsg.id)
-                    currentMap[message.sessionId] = updated
-                } else {
-                    // First agent response after user message -> add new agent bubble
-                    currentMap[message.sessionId] = list + message
-                }
+                // If last message was USER (or thread is empty) -> spawn a NEW agent bubble for this turn
+                val newAgentMsg = message.copy(id = UUID.randomUUID().toString())
+                currentMap[message.sessionId] = list + newAgentMsg
             }
         }
         _messagesMap.value = currentMap
