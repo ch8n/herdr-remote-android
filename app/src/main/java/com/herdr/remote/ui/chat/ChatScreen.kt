@@ -418,9 +418,9 @@ fun ChatScreen(
                             state = listState,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 12.dp),
-                            contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                .padding(horizontal = 10.dp),
+                            contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             items(messages, key = { it.id }) { msg ->
                                 val currentProfile = activeSession?.agentProfile ?: com.herdr.remote.data.model.AgentProfile.PRESET_PROFILES[0]

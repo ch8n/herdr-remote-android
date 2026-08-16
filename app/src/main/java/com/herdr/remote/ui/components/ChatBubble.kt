@@ -145,21 +145,22 @@ fun ChatBubble(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top
     ) {
         if (!isUser) {
             // Agent Avatar next to bubble
             Box(
                 modifier = Modifier
-                    .padding(end = 8.dp, top = 4.dp)
-                    .size(32.dp)
+                    .padding(end = 10.dp, top = 2.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(SurfaceElevated)
-                    .border(1.dp, BorderSubtle, CircleShape),
+                    .border(1.dp, BorderHighlight, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = agentProfile.avatarEmoji, fontSize = 16.sp)
+                Text(text = agentProfile.avatarEmoji, fontSize = 17.sp)
             }
         }
 
@@ -201,9 +202,9 @@ fun ChatBubble(
                             bottomEnd = if (isUser) 4.dp else 16.dp
                         )
                     )
-                    .padding(12.dp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     // Header Bar with Agent Name (or User label), Preview/Raw Toggle, and Copy
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -213,19 +214,20 @@ fun ChatBubble(
                         Text(
                             text = if (isUser) "You" else agentProfile.name,
                             style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
                             ),
-                            color = if (isUser) AccentViolet else AccentCyan,
+                            color = if (isUser) Color(0xFFC7D2FE) else AccentCyan,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
 
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             // Markdown Toggle Pill (Preview vs Raw)
                             Box(
@@ -238,22 +240,22 @@ fun ChatBubble(
                                         RoundedCornerShape(6.dp)
                                     )
                                     .clickable { isRawMode = !isRawMode }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = if (isRawMode) Icons.Default.Code else Icons.Default.Visibility,
                                         contentDescription = if (isRawMode) "Raw Markdown" else "Rendered Preview",
                                         tint = if (isRawMode) AccentViolet else AccentCyan,
-                                        modifier = Modifier.size(11.dp)
+                                        modifier = Modifier.size(12.dp)
                                     )
                                     Text(
                                         text = if (isRawMode) "RAW" else "PREVIEW",
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontSize = 9.5.sp,
+                                            fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
                                         ),
                                         color = if (isRawMode) AccentViolet else TextSecondary
@@ -261,21 +263,26 @@ fun ChatBubble(
                                 }
                             }
 
-                            // Contextual Copy Button (Copies Rendered text or Raw Markdown based on toggle)
-                            IconButton(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val textToCopy = if (isRawMode) message.content else stripMarkdownForPlainCopy(message.content)
-                                    val clip = ClipData.newPlainText("Herdr Message", textToCopy)
-                                    clipboard.setPrimaryClip(clip)
-                                    val toastMsg = if (isRawMode) "Copied raw markdown" else "Copied rendered preview"
-                                    Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(22.dp)
+                            // Contextual Copy Button with spacious unclipped container
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(SurfaceElevated.copy(alpha = 0.6f))
+                                    .border(0.5.dp, BorderSubtle, CircleShape)
+                                    .clickable {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val textToCopy = if (isRawMode) message.content else stripMarkdownForPlainCopy(message.content)
+                                        val clip = ClipData.newPlainText("Herdr Message", textToCopy)
+                                        clipboard.setPrimaryClip(clip)
+                                        val toastMsg = if (isRawMode) "Copied raw markdown" else "Copied rendered preview"
+                                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Copy",
+                                    contentDescription = "Copy message",
                                     tint = TextMuted,
                                     modifier = Modifier.size(13.dp)
                                 )
@@ -388,8 +395,8 @@ fun ChatBubble(
             // User Avatar next to user bubble
             Box(
                 modifier = Modifier
-                    .padding(start = 8.dp, top = 4.dp)
-                    .size(32.dp)
+                    .padding(start = 10.dp, top = 2.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
@@ -399,7 +406,7 @@ fun ChatBubble(
                     .border(1.dp, BubbleUserBorder, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "👤", fontSize = 16.sp)
+                Text(text = "👤", fontSize = 17.sp)
             }
         }
     }

@@ -101,19 +101,32 @@ def get_pane_turn_output(pane_id):
     
     last_prompt = pane_turn_prompts.get(pane_id, "").strip()
     if last_prompt:
-        prompt_snippet = last_prompt[:35]
+        prompt_snippet = last_prompt[:25]
         marker = f"> {prompt_snippet}"
         pos = full_output.rfind(marker)
         if pos != -1:
-            end_line = full_output.find("\n", pos)
-            if end_line != -1:
-                turn_text = full_output[end_line + 1:]
-                next_prompt = turn_text.find("\n> ")
-                if next_prompt != -1:
-                    turn_text = turn_text[:next_prompt]
-                return turn_text.strip("\n")
-            else:
-                return full_output[pos + len(marker):].strip("\n")
+            after_prompt = full_output[pos:]
+            lines = after_prompt.splitlines()
+            # Skip past prompt header line and any indented/wrapped continuation prompt lines
+            start_idx = 1
+            prompt_words = set(last_prompt.split())
+            while start_idx < len(lines):
+                cur_line = lines[start_idx].strip()
+                if not cur_line:
+                    start_idx += 1
+                    continue
+                line_words = set(cur_line.split())
+                if (lines[start_idx].startswith("  ") or cur_line in last_prompt or (line_words and line_words.issubset(prompt_words))):
+                    start_idx += 1
+                    continue
+                break
+            
+            turn_lines = lines[start_idx:]
+            turn_text = "\n".join(turn_lines)
+            next_prompt = turn_text.find("\n> ")
+            if next_prompt != -1:
+                turn_text = turn_text[:next_prompt]
+            return turn_text.strip("\n")
                 
     baseline = pane_turn_baselines.get(pane_id)
     if baseline and full_output.startswith(baseline):
