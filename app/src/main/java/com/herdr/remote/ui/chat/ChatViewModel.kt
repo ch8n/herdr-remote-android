@@ -159,6 +159,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         sessionRepository.syncRemoteSessions(event.sessions, event.sessionMessages)
                         sessionRepository.restoreAllSessionsChat()
                     }
+                    is HerdrServerEvent.TabFocused -> {
+                        sessionRepository.switchSession(event.tabId)
+                    }
+                    is HerdrServerEvent.TabClosed -> {
+                        sessionRepository.closeSession(event.tabId)
+                    }
                     is HerdrServerEvent.SessionHistoryReceived -> {
                         sessionRepository.syncSessionHistory(event.sessionId, event.messages)
                     }
@@ -208,19 +214,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun selectSession(sessionId: String) {
         sessionRepository.switchSession(sessionId)
         if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
-            wsClient.requestSessionHistory(sessionId)
+            wsClient.selectTab(sessionId)
         }
     }
 
     fun createSession(title: String, profile: AgentProfile) {
         sessionRepository.createSession(title, profile)
+        if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
+            wsClient.createTab(title)
+        }
     }
 
     fun createNewHerdrSession() {
         val currentCount = sessions.value.size
         val defaultProfile = AgentProfile.PRESET_PROFILES[0]
-        val title = "Herdr Session ${currentCount + 1}"
+        val title = "Tab ${currentCount + 1}"
         sessionRepository.createSession(title, defaultProfile)
+        if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
+            wsClient.createTab(title)
+        }
     }
 
     fun syncTabsWithDesktop(onComplete: ((Int) -> Unit)? = null) {
@@ -244,6 +256,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeSession(sessionId: String) {
         sessionRepository.closeSession(sessionId)
+        if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
+            wsClient.closeTab(sessionId)
+        }
     }
 
     fun clearChat() {

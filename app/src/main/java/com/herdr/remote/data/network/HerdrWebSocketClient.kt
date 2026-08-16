@@ -33,6 +33,8 @@ sealed class HerdrServerEvent {
     data class Disconnected(val reason: String) : HerdrServerEvent()
     data class ActiveSessionsReceived(val sessions: List<Session>, val sessionMessages: Map<String, List<Message>> = emptyMap()) : HerdrServerEvent()
     data class SessionHistoryReceived(val sessionId: String, val messages: List<Message>) : HerdrServerEvent()
+    data class TabFocused(val tabId: String) : HerdrServerEvent()
+    data class TabClosed(val tabId: String) : HerdrServerEvent()
     data class StreamChunk(val sessionId: String, val chunk: String) : HerdrServerEvent()
     data class MessageComplete(val message: Message) : HerdrServerEvent()
     data class ToolStarted(val sessionId: String, val toolExecution: ToolExecution) : HerdrServerEvent()
@@ -139,14 +141,22 @@ class HerdrWebSocketClient(
         webSocket?.send("""{"action":"get_sessions"}""")
     }
 
-    fun requestSessionHistory(sessionId: String) {
-        if (sessionId.isBlank()) return
-        webSocket?.send("""{"type":"get_history","session_id":"$sessionId"}""")
-        webSocket?.send("""{"type":"get_messages","session_id":"$sessionId"}""")
-        webSocket?.send("""{"type":"get_tab_content","session_id":"$sessionId"}""")
-        webSocket?.send("""{"type":"select_tab","tab_id":"$sessionId"}""")
-        webSocket?.send("""{"type":"load_session","session_id":"$sessionId"}""")
-        webSocket?.send("""{"action":"get_history","sessionId":"$sessionId"}""")
+    fun selectTab(tabId: String) {
+        if (tabId.isBlank()) return
+        webSocket?.send("""{"type":"select_tab","tab_id":"$tabId"}""")
+    }
+
+    fun createTab(label: String = "") {
+        val payload = JsonObject().apply {
+            addProperty("type", "create_tab")
+            if (label.isNotBlank()) addProperty("label", label)
+        }
+        webSocket?.send(payload.toString())
+    }
+
+    fun closeTab(tabId: String) {
+        if (tabId.isBlank()) return
+        webSocket?.send("""{"type":"close_tab","tab_id":"$tabId"}""")
     }
 
     private fun handleIncomingMessage(text: String) {
@@ -246,6 +256,20 @@ class HerdrWebSocketClient(
                             val msgs = extractMessagesFromSessionObject(sessionObj, newSession.id)
                             val messagesMap = if (msgs.isNotEmpty()) mapOf(newSession.id to msgs) else emptyMap()
                             _events.emit(HerdrServerEvent.ActiveSessionsReceived(listOf(newSession), messagesMap))
+                        }
+                    }
+
+                    "tab_focused", "focus_tab", "tab_selected", "active_tab", "select_tab" -> {
+                        val targetTab = json.get("tab_id")?.asString ?: json.get("session_id")?.asString ?: sessionId
+                        if (targetTab.isNotBlank()) {
+                            _events.emit(HerdrServerEvent.TabFocused(targetTab))
+                        }
+                    }
+
+                    "tab_closed", "close_tab", "delete_tab" -> {
+                        val targetTab = json.get("tab_id")?.asString ?: json.get("session_id")?.asString ?: sessionId
+                        if (targetTab.isNotBlank()) {
+                            _events.emit(HerdrServerEvent.TabClosed(targetTab))
                         }
                     }
 

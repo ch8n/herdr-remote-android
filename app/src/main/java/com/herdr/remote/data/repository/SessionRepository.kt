@@ -306,36 +306,23 @@ class SessionRepository(
             }
         }
 
-        // Keep active local sessions that were not in remote list (excluding default_cluster)
-        val localPreserved = currentList.filter { local ->
-            local.id != "default_cluster" && remoteSessions.none { it.id == local.id }
-        }
-        val mergedSessions = (newSessionsList + localPreserved).distinctBy { it.id }
-
-        _sessions.value = mergedSessions
+        // Use the live remote sessions as the source of truth
+        _sessions.value = newSessionsList
         _messagesMap.value = currentMessages
 
-        // After desktop sync is done: if it contains the last selected tab (by ID or Title), open and select it!
-        val savedSessionId = settingsRepository?.getLastActiveSessionId() ?: ""
-        val savedSessionTitle = settingsRepository?.getLastActiveSessionTitle() ?: ""
+        // If current active session was closed, switch to first available session
+        val currentActive = _activeSessionId.value
+        val stillExists = newSessionsList.any { it.id == currentActive }
 
-        val matchedSession = mergedSessions.find { session ->
-            (savedSessionId.isNotBlank() && session.id == savedSessionId) ||
-            (savedSessionTitle.isNotBlank() && session.title.equals(savedSessionTitle, ignoreCase = true))
-        } ?: if (_activeSessionId.value.isNotBlank() && _activeSessionId.value != "default_cluster") {
-            mergedSessions.find { it.id == _activeSessionId.value }
-        } else {
-            null
+        if (!stillExists || currentActive.isBlank()) {
+            val savedSessionId = settingsRepository?.getLastActiveSessionId() ?: ""
+            val matched = newSessionsList.find { it.id == savedSessionId } ?: newSessionsList.firstOrNull()
+            if (matched != null) {
+                _activeSessionId.value = matched.id
+                settingsRepository?.saveLastActiveSession(matched.id, matched.title)
+                ensureSessionMessages(matched.id)
+            }
         }
-
-        val targetSession = matchedSession
-            ?: remoteSessions.firstOrNull()
-            ?: mergedSessions.first()
-
-        val targetActiveId = targetSession.id
-        _activeSessionId.value = targetActiveId
-        settingsRepository?.saveLastActiveSession(targetActiveId, targetSession.title)
-        ensureSessionMessages(targetActiveId)
     }
 }
 

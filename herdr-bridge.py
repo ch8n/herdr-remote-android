@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Herdr Remote WebSocket Bridge & Real-Time Streaming Daemon
-Bridges ~/.config/herdr/herdr.sock to a WebSocket server on port 8765.
-Features:
-- Submits prompts to agent if agent is running
-- If NO agent is running, submits command directly to bash / zsh shell with Enter execution
-- Streams clean agent output and terminal output directly to Android
-- Preserves markdown formatting so code blocks are rendered as cards and text as Compose typography
-- Real-time tab sync when new tabs open or close on desktop
+Herdr Remote WebSocket Bridge & Real-Time Bi-Directional Workspace Sync Daemon
+Bridges ~/.config/herdr/herdr.sock to WebSocket on port 8765.
+
+Full Bi-Directional Tab Synchronization:
+- Tab Creation: Tap '+ New Tab' on Android -> runs 'herdr tab create --focus' on desktop -> syncs to both.
+- Tab Closing: Tap 'x' on tab in Android -> runs 'herdr tab close <id>' on desktop -> syncs to both.
+- Tab Switching: Select tab on Android -> runs 'herdr tab focus <id>' on desktop.
+- Desktop Tab Switching: Focus tab on desktop -> detects focused_tab_id -> switches tab on Android.
+- Real-Time Terminal Streaming & Clean Markdown Formatting.
 """
 
 import asyncio
@@ -135,6 +136,7 @@ def get_synced_sessions_payload():
     tabs = snapshot.get("tabs", [])
     panes = snapshot.get("panes", [])
     agents = snapshot.get("agents", [])
+    focused_tab_id = snapshot.get("focused_tab_id", "")
     
     sessions_list = []
     
@@ -172,27 +174,39 @@ def get_synced_sessions_payload():
         "type": "sessions_list",
         "sessions": sessions_list,
         "active_sessions": sessions_list,
+        "focused_tab_id": focused_tab_id,
         "count": len(sessions_list)
     }
 
 async def live_terminal_watcher(websocket, client_ip):
     last_tab_hash = ""
+    last_focused_tab = ""
     last_pane_hashes = {}
     
     try:
         while True:
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(0.35)
             
-            # 1. Check if tabs changed
             payload = get_synced_sessions_payload()
             sessions = payload.get("sessions", [])
             tab_ids = ",".join(s["id"] for s in sessions)
+            focused_tab_id = payload.get("focused_tab_id", "")
             
+            # 1. Check if tabs created/closed on desktop
             if tab_ids != last_tab_hash:
                 last_tab_hash = tab_ids
                 await websocket.send(json.dumps(payload))
             
-            # 2. Check each pane for output changes
+            # 2. Check if active tab switched on desktop
+            if focused_tab_id and focused_tab_id != last_focused_tab:
+                last_focused_tab = focused_tab_id
+                await websocket.send(json.dumps({
+                    "type": "tab_focused",
+                    "tab_id": focused_tab_id,
+                    "session_id": focused_tab_id
+                }))
+            
+            # 3. Check each pane for output changes
             for session in sessions:
                 tab_id = session.get("id")
                 pane_id = session.get("pane_id") or tab_id
@@ -248,12 +262,55 @@ async def handle_client(websocket):
         async for message in websocket:
             try:
                 data = json.loads(message)
-                msg_type = data.get("type", "")
+                msg_type = data.get("type", "") or data.get("action", "")
                 
                 if msg_type in ("get_sessions", "list_sessions", "sync_tabs", "get_tabs", "client_hello"):
                     payload = get_synced_sessions_payload()
                     await websocket.send(json.dumps(payload))
-                elif msg_type in ("get_tab_content", "select_tab", "focus_tab"):
+                
+                elif msg_type in ("select_tab", "focus_tab", "switch_tab"):
+                    target_id = data.get("tab_id") or data.get("session_id") or ""
+                    if target_id:
+                        print(f"[HerdrBridge] Focusing tab on desktop: {target_id}")
+                        subprocess.run(["/Users/chetan/.local/bin/herdr", "tab", "focus", target_id], capture_output=True, text=True, timeout=2.0)
+                        
+                        payload = get_synced_sessions_payload()
+                        session = next((s for s in payload.get("sessions", []) if s.get("id") == target_id), {})
+                        pane_id = session.get("pane_id") or target_id
+                        output = read_pane_terminal(pane_id)
+                        if output:
+                            clean_output = "\n".join(output.splitlines()[-45:])
+                            await websocket.send(json.dumps({
+                                "type": "message_complete",
+                                "session_id": target_id,
+                                "id": f"msg_terminal_{target_id}",
+                                "content": clean_output
+                            }))
+                
+                elif msg_type in ("create_tab", "new_tab", "add_tab"):
+                    label = data.get("label") or data.get("title") or ""
+                    print(f"[HerdrBridge] Creating new tab on desktop (label: {label})...")
+                    cmd = ["/Users/chetan/.local/bin/herdr", "tab", "create", "--focus"]
+                    if label:
+                        cmd.extend(["--label", label])
+                    subprocess.run(cmd, capture_output=True, text=True, timeout=3.0)
+                    
+                    # Broadcast updated tabs immediately
+                    await asyncio.sleep(0.2)
+                    payload = get_synced_sessions_payload()
+                    await websocket.send(json.dumps(payload))
+                
+                elif msg_type in ("close_tab", "delete_tab", "remove_tab"):
+                    target_id = data.get("tab_id") or data.get("session_id") or ""
+                    if target_id:
+                        print(f"[HerdrBridge] Closing tab on desktop: {target_id}")
+                        subprocess.run(["/Users/chetan/.local/bin/herdr", "tab", "close", target_id], capture_output=True, text=True, timeout=3.0)
+                        
+                        await asyncio.sleep(0.2)
+                        payload = get_synced_sessions_payload()
+                        await websocket.send(json.dumps(payload))
+                
+                elif msg_type in ("get_tab_content",):
                     target_id = data.get("session_id") or data.get("tab_id") or ""
                     payload = get_synced_sessions_payload()
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == target_id), {})
@@ -268,6 +325,7 @@ async def handle_client(websocket):
                                 "id": f"msg_terminal_{target_id}",
                                 "content": clean_output
                             }))
+                
                 elif msg_type == "user_message":
                     session_id = data.get("session_id", "")
                     content = data.get("content", "")
