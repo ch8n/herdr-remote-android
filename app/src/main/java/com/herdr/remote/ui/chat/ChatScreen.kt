@@ -164,18 +164,12 @@ fun ChatScreen(
         }
     }
 
-    // Scroll to end when tab switches
+    // Reset unread state on tab switch (no auto-scroll)
     LaunchedEffect(activeSessionId) {
         hasUnreadMessagesBelow = false
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(
-                index = messages.size,
-                scrollOffset = 100_000
-            )
-        }
     }
 
-    // When new messages or streaming updates arrive
+    // When new messages or streaming updates arrive (no auto-scroll, only update red dot badge)
     var lastKnownMessageSize by remember { mutableStateOf(messages.size) }
     var lastKnownMessageContent by remember { mutableStateOf(messages.lastOrNull()?.content ?: "") }
 
@@ -188,15 +182,8 @@ fun ChatScreen(
         lastKnownMessageContent = currentContent
 
         if (isNewContent && messages.isNotEmpty()) {
-            if (isAtBottom) {
-                // If user is already at bottom, smoothly keep up with streaming
-                listState.animateScrollToItem(
-                    index = messages.size,
-                    scrollOffset = 100_000
-                )
-                hasUnreadMessagesBelow = false
-            } else {
-                // User has scrolled up -> DO NOT autoscroll, show red dot alert
+            if (!isAtBottom) {
+                // When new content arrives and user is not at bottom, show red dot alert
                 hasUnreadMessagesBelow = true
             }
         }
