@@ -89,6 +89,18 @@ fun ModelSelectorScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
 
+    var benchmarkingModelId by remember { mutableStateOf<String?>(null) }
+    var benchmarkResults by remember { mutableStateOf<Map<String, com.herdr.remote.data.network.ModelBenchmarkResult>>(emptyMap()) }
+
+    fun testModel(modelId: String) {
+        benchmarkingModelId = modelId
+        scope.launch {
+            val res = openRouterService.benchmarkModel(apiKey, modelId)
+            benchmarkingModelId = null
+            benchmarkResults = benchmarkResults + (modelId to res)
+        }
+    }
+
     fun loadModels() {
         isLoading = true
         scope.launch {
@@ -386,6 +398,77 @@ fun ModelSelectorScreen(
                                         color = TextMuted
                                     )
                                 }
+                            }
+
+                            // Benchmark Speed Test Action & Result Display
+                            val benchmarkResult = benchmarkResults[model.id]
+                            val isBenchmarking = benchmarkingModelId == model.id
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isBenchmarking) SurfaceElevated else AccentViolet.copy(alpha = 0.15f))
+                                        .border(1.dp, if (isBenchmarking) AccentViolet else AccentViolet.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .clickable(enabled = !isBenchmarking) { testModel(model.id) }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isBenchmarking) {
+                                            CircularProgressIndicator(
+                                                strokeWidth = 1.5.dp,
+                                                color = AccentViolet,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text("Testing speed...", fontSize = 11.sp, color = AccentViolet)
+                                        } else {
+                                            Text("🧪 Test Speed", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AccentViolet)
+                                        }
+                                    }
+                                }
+
+                                if (benchmarkResult != null && benchmarkResult.isSuccess) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(AccentEmerald.copy(alpha = 0.15f))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "⚡ ${benchmarkResult.latencyMs}ms • 🚀 ${String.format("%.1f", benchmarkResult.tokensPerSecond)} t/s",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp
+                                            ),
+                                            color = AccentEmerald
+                                        )
+                                    }
+                                } else if (benchmarkResult != null && !benchmarkResult.isSuccess) {
+                                    Text(
+                                        text = "Failed: ${benchmarkResult.errorMessage?.take(30)}",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFEF5350)
+                                    )
+                                }
+                            }
+
+                            if (benchmarkResult != null && benchmarkResult.isSuccess && benchmarkResult.responseText.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "💬 \"${benchmarkResult.responseText}\"",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 16.sp),
+                                    color = TextSecondary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
 

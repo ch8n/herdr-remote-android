@@ -125,6 +125,19 @@ fun SettingsScreen(
     var isTestingHerdr by remember { mutableStateOf(false) }
     var herdrTestResult by remember { mutableStateOf<HerdrConnectionResult?>(null) }
 
+    var isBenchmarkingModel by remember { mutableStateOf(false) }
+    var modelBenchmarkResult by remember { mutableStateOf<com.herdr.remote.data.network.ModelBenchmarkResult?>(null) }
+
+    fun benchmarkCurrentModel() {
+        isBenchmarkingModel = true
+        modelBenchmarkResult = null
+        scope.launch {
+            val res = openRouterService.benchmarkModel(apiKey, selectedModel)
+            isBenchmarkingModel = false
+            modelBenchmarkResult = res
+        }
+    }
+
     fun testHerdr() {
         if (serverUrl.isBlank()) return
         isTestingHerdr = true
@@ -529,6 +542,111 @@ fun SettingsScreen(
                                 tint = TextSecondary,
                                 modifier = Modifier.size(20.dp)
                             )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Benchmark & Speed Test Button
+                Button(
+                    onClick = { benchmarkCurrentModel() },
+                    enabled = !isBenchmarkingModel,
+                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 8.dp, horizontal = 12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (isBenchmarkingModel) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                color = AccentViolet,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Benchmarking Inference Speed...", fontSize = 13.sp, color = AccentViolet)
+                        } else {
+                            Text("⚡ Benchmark & Test Inference Speed", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AccentViolet)
+                        }
+                    }
+                }
+
+                // Benchmark Result Card
+                modelBenchmarkResult?.let { result ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (result.isSuccess) AccentEmerald.copy(alpha = 0.08f) else Color(0x1AEF5350))
+                            .border(1.dp, if (result.isSuccess) AccentEmerald.copy(alpha = 0.4f) else Color(0x4DEF5350), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (result.isSuccess) "⚡ Model Benchmark Passed" else "⚠️ Benchmark Failed",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (result.isSuccess) AccentEmerald else Color(0xFFEF5350)
+                                )
+                                if (result.isSuccess) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(AccentEmerald.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "🚀 ${String.format("%.1f", result.tokensPerSecond)} tokens/s",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                                            color = AccentEmerald
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (result.isSuccess) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "⏱️ Latency: ${result.latencyMs}ms",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary
+                                    )
+                                    Text(
+                                        text = "📊 Generated: ${result.totalTokens} tokens",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary
+                                    )
+                                }
+
+                                if (result.responseText.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "💬 \"${result.responseText}\"",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                                        color = TextPrimary
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = result.errorMessage ?: "Unknown error occurred",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    color = Color(0xFFEF5350)
+                                )
+                            }
                         }
                     }
                 }
