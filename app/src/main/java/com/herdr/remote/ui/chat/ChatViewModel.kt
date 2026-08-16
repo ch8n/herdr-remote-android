@@ -89,11 +89,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var activeSimulationJob: Job? = null
 
     init {
+        observeActiveSessionTracking()
         sessionRepository.restoreAllSessionsChat()
         observeSpeechState()
         observeWebSocketEvents()
         observeWebSocketStatus()
         observeSettings()
+    }
+
+    private fun observeActiveSessionTracking() {
+        viewModelScope.launch {
+            activeSessionId.collect { id ->
+                com.herdr.remote.util.AppLifecycleTracker.setFocusedTabId(id)
+            }
+        }
     }
 
     private fun observeWebSocketStatus() {

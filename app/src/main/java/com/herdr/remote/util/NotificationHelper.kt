@@ -95,6 +95,12 @@ object NotificationHelper {
         initNotificationChannel(context)
         if (!canPostNotification(context)) return
 
+        // Rule: Do NOT show notifications for the currently active/focused tab while app is in foreground.
+        // SHOW notifications for background tabs or when app is in background/killed.
+        if (!AppLifecycleTracker.shouldShowNotificationForTab(session.id)) {
+            return
+        }
+
         val notifId = session.id.hashCode()
 
         // Main Tap Intent (Opens Session in Tab)
@@ -183,6 +189,10 @@ object NotificationHelper {
     ) {
         initNotificationChannel(context)
         if (!canPostNotification(context)) return
+
+        if (!AppLifecycleTracker.shouldShowNotificationForTab(session.id)) {
+            return
+        }
 
         val notifId = (session.id + tool.id).hashCode()
 
@@ -307,6 +317,10 @@ object NotificationHelper {
     ) {
         initNotificationChannel(context)
         if (!canPostNotification(context)) return
+
+        if (!AppLifecycleTracker.shouldShowNotificationForTab(session.id)) {
+            return
+        }
 
         val notifId = (session.id + question).hashCode()
 

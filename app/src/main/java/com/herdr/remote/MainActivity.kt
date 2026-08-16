@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         NotificationHelper.initNotificationChannel(this)
+        com.herdr.remote.worker.HerdrNotificationWorker.schedule(applicationContext)
         handleIntent(intent)
 
         setContent {
@@ -73,6 +74,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.herdr.remote.util.AppLifecycleTracker.onActivityResumed()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.herdr.remote.util.AppLifecycleTracker.onActivityPaused()
     }
 
     override fun onNewIntent(intent: Intent) {
