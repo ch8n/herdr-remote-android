@@ -70,8 +70,8 @@ dependencies {
     // Image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Markdown Renderer (Compose Material 3)
-    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.28.0")
+    // Markdown Renderer
+    implementation("com.github.jeziellago:compose-markdown:0.5.4")
 
     // Network & JSON
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

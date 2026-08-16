@@ -60,9 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -739,28 +737,16 @@ fun MarkdownMessageText(
                 )
             }
         } else {
-            // Rendered Markdown View using mikepenz multiplatform-markdown-renderer-m3
-            Markdown(
-                content = text,
-                colors = markdownColor(
-                    text = TextPrimary,
-                    codeText = TextHighlight,
-                    linkText = AccentCyan,
-                    codeBackground = CodeBackground,
-                    inlineCodeBackground = CodeBackground,
-                    dividerColor = BorderSubtle
+            // Rendered Markdown View using compose-markdown
+            MarkdownText(
+                markdown = text,
+                color = TextPrimary,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    color = TextPrimary
                 ),
-                typography = markdownTypography(
-                    text = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 24.sp),
-                    code = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.5.sp,
-                        lineHeight = 19.sp
-                    ),
-                    h1 = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = AccentCyan),
-                    h2 = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = AccentViolet),
-                    h3 = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TextPrimary)
-                ),
+                linkColor = AccentCyan,
                 modifier = Modifier.fillMaxWidth()
             )
         }
