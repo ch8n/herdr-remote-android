@@ -142,6 +142,16 @@ class SessionRepository(
         }
     }
 
+    /**
+     * Close all active tabs and clear sessions when Herdr disconnects.
+     */
+    fun closeAllTabs() {
+        _sessions.value = emptyList()
+        _messagesMap.value = emptyMap()
+        _activeSessionId.value = ""
+        settingsRepository?.saveLastActiveSessionId("")
+    }
+
     fun renameSession(sessionId: String, newTitle: String) {
         _sessions.value = _sessions.value.map { session ->
             if (session.id == sessionId) session.copy(title = newTitle) else session

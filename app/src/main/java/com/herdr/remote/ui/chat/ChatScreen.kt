@@ -289,22 +289,20 @@ fun ChatScreen(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Top Agent Header
-                activeSession?.let { currentSession ->
-                    TopAgentHeader(
-                        session = currentSession,
-                        autoRephraseEnabled = settings.autoRephraseOnSpeech,
-                        onToggleAutoRephrase = { viewModel.toggleAutoRephrase() },
-                        onOpenSettings = onOpenSettings,
-                        onClearChat = { viewModel.clearChat() },
-                        onNewSession = { viewModel.createNewHerdrSession() },
-                        onSyncTabs = {
-                            viewModel.syncTabsWithDesktop { count ->
-                                val msg = if (count > 0) "Synced $count tabs from Desktop" else "Connected to Herdr. Desktop tabs synced."
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            }
+                TopAgentHeader(
+                    session = activeSession,
+                    autoRephraseEnabled = settings.autoRephraseOnSpeech,
+                    onToggleAutoRephrase = { viewModel.toggleAutoRephrase() },
+                    onOpenSettings = onOpenSettings,
+                    onClearChat = { viewModel.clearChat() },
+                    onNewSession = { viewModel.createNewHerdrSession() },
+                    onSyncTabs = {
+                        viewModel.syncTabsWithDesktop { count ->
+                            val msg = if (count > 0) "Synced $count tabs from Desktop" else "Connected to Herdr. Desktop tabs synced."
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
-                    )
-                }
+                    }
+                )
 
                 // Multi-session Tabs Bar
                 SessionTabsBar(

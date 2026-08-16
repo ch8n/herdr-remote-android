@@ -65,7 +65,7 @@ import com.herdr.remote.ui.theme.TextSecondary
 
 @Composable
 fun TopAgentHeader(
-    session: Session,
+    session: Session?,
     autoRephraseEnabled: Boolean,
     onToggleAutoRephrase: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -76,8 +76,9 @@ fun TopAgentHeader(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
+    val currentStatus = session?.status ?: AgentConnectionStatus.OFFLINE
     val statusColor by animateColorAsState(
-        targetValue = when (session.status) {
+        targetValue = when (currentStatus) {
             AgentConnectionStatus.ONLINE -> AccentEmerald
             AgentConnectionStatus.THINKING -> AccentAmber
             AgentConnectionStatus.EXECUTING_TOOL -> AccentCyan
@@ -91,7 +92,7 @@ fun TopAgentHeader(
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (session.status != AgentConnectionStatus.ONLINE && session.status != AgentConnectionStatus.OFFLINE) 1.35f else 1.08f,
+        targetValue = if (currentStatus != AgentConnectionStatus.ONLINE && currentStatus != AgentConnectionStatus.OFFLINE) 1.35f else 1.08f,
         animationSpec = infiniteRepeatable(
             animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -129,7 +130,7 @@ fun TopAgentHeader(
                         .border(1.5.dp, BorderSubtle, CircleShape)
                 ) {
                     Text(
-                        text = session.agentProfile.avatarEmoji,
+                        text = session?.agentProfile?.avatarEmoji ?: "💻",
                         fontSize = 18.sp
                     )
 
@@ -152,7 +153,7 @@ fun TopAgentHeader(
                 Column(modifier = Modifier.weight(1f, fill = false)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = session.agentProfile.name.uppercase(),
+                            text = session?.agentProfile?.name?.uppercase() ?: "HERDR REMOTE",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
@@ -169,13 +170,13 @@ fun TopAgentHeader(
                         modifier = Modifier.padding(top = 1.dp)
                     ) {
                         Text(
-                            text = when (session.status) {
-                                AgentConnectionStatus.ONLINE -> "Online • ${session.title}"
+                            text = when (currentStatus) {
+                                AgentConnectionStatus.ONLINE -> "Online • ${session?.title ?: "Ready"}"
                                 AgentConnectionStatus.THINKING -> "Thinking..."
-                                AgentConnectionStatus.EXECUTING_TOOL -> session.statusDetail
+                                AgentConnectionStatus.EXECUTING_TOOL -> session?.statusDetail ?: "Working..."
                                 AgentConnectionStatus.STREAMING -> "Streaming..."
                                 AgentConnectionStatus.CONNECTING -> "Connecting..."
-                                AgentConnectionStatus.OFFLINE -> "Offline"
+                                AgentConnectionStatus.OFFLINE -> if (session != null) "Offline" else "Disconnected • No Active Tabs"
                             },
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                             color = statusColor,

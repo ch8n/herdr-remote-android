@@ -124,7 +124,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val detail = when (status) {
                     AgentConnectionStatus.ONLINE -> "Online • Herdr Node Ready"
                     AgentConnectionStatus.CONNECTING -> "Connecting to node..."
-                    AgentConnectionStatus.OFFLINE -> "Offline • Disconnected"
+                    AgentConnectionStatus.OFFLINE -> {
+                        sessionRepository.closeAllTabs()
+                        "Offline • Disconnected"
+                    }
                     else -> "Online"
                 }
                 sessionRepository.updateAllSessionsStatus(status, detail)
@@ -164,9 +167,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     is HerdrServerEvent.Disconnected -> {
                         sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.OFFLINE, "Offline • Disconnected")
+                        sessionRepository.closeAllTabs()
                     }
                     is HerdrServerEvent.Error -> {
                         sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.OFFLINE, "Error • ${event.message}")
+                        sessionRepository.closeAllTabs()
                     }
                     is HerdrServerEvent.ActiveSessionsReceived -> {
                         sessionRepository.syncRemoteSessions(event.sessions, event.sessionMessages)
@@ -431,7 +436,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         if (trimmed.isEmpty() && attachmentsToSend.isEmpty()) return
 
-        val currentSession = activeSession.value ?: return
+        val currentSession = activeSession.value ?: sessionRepository.createSession(
+            title = "OpenRouter AI",
+            profile = AgentProfile.PRESET_PROFILES[0]
+        )
 
         // 1. Add User Chat Bubble
         val userMessage = Message(
