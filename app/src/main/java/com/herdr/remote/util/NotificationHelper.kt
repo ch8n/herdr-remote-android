@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.herdr.remote.MainActivity
 import com.herdr.remote.R
 import com.herdr.remote.data.model.Message
+import com.herdr.remote.data.model.MessageStatus
 import com.herdr.remote.data.model.Session
 import com.herdr.remote.data.model.ToolExecution
 import com.herdr.remote.receiver.NotificationActionReceiver
@@ -37,6 +38,8 @@ object NotificationHelper {
     const val ACTION_APPROVE = "com.herdr.remote.ACTION_APPROVE"
     const val ACTION_DENY = "com.herdr.remote.ACTION_DENY"
     const val ACTION_SELECT_CHOICE = "com.herdr.remote.ACTION_SELECT_CHOICE"
+
+    private val lastNotificationTimes = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     fun initNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -101,6 +104,16 @@ object NotificationHelper {
             return
         }
 
+        // Throttle rapid streaming updates to max once every 1500ms per tab
+        val now = System.currentTimeMillis()
+        val lastTime = lastNotificationTimes[session.id] ?: 0L
+        val isCompleted = message.status == MessageStatus.SENT || message.status == MessageStatus.ERROR
+        if (!isCompleted && (now - lastTime < 1500L)) {
+            return
+        }
+        lastNotificationTimes[session.id] = now
+
+        // Single stable notification ID per tab
         val notifId = session.id.hashCode()
 
         // Main Tap Intent (Opens Session in Tab)
@@ -160,15 +173,16 @@ object NotificationHelper {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("⚡ ${session.agentProfile.name} • Task Completed")
-            .setContentText(if (cleanPreview.isNotBlank()) cleanPreview else "Agent finished executing your instructions.")
+            .setContentTitle("⚡ ${session.agentProfile.name} • ${session.title}")
+            .setContentText(if (cleanPreview.isNotBlank()) cleanPreview else "Agent active in background.")
             .setSubText(session.title)
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText(if (cleanPreview.isNotBlank()) cleanPreview else "Task completed in session: ${session.title}")
+                    .bigText(if (cleanPreview.isNotBlank()) cleanPreview else "Latest update in session: ${session.title}")
                     .setSummaryText(session.agentProfile.role)
             )
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setOnlyAlertOnce(true) // Update existing notification in-place without buzzing repeatedly
             .setAutoCancel(true)
             .setContentIntent(tapPendingIntent)
             .addAction(replyAction)
