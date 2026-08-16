@@ -3,7 +3,8 @@
 Herdr Remote WebSocket Bridge & Real-Time Streaming Daemon
 Bridges ~/.config/herdr/herdr.sock to a WebSocket server on port 8765.
 Features:
-- Submits chat prompts directly with Enter / Run into agent panes
+- Submits prompts to agent if agent is running
+- If NO agent is running, submits command directly to bash / zsh shell with Enter execution
 - Real-time live polling (400ms) to stream terminal character/line changes directly to Android
 - Real-time tab sync when new tabs open or close on desktop
 - Clean ANSI & duplicate box-drawing horizontal lines filtering
@@ -41,9 +42,6 @@ def query_herdr_socket(method, params=None):
         return {"error": str(e)}
 
 def clean_terminal_buffer(raw_text):
-    """
-    Cleans raw terminal buffer by stripping ANSI codes and deduplicating repetitive box borders.
-    """
     if not raw_text:
         return ""
     
@@ -79,31 +77,39 @@ def read_pane_terminal(pane_id):
         if res.returncode == 0 and res.stdout:
             cleaned = clean_terminal_buffer(res.stdout.strip())
             return cleaned
-    except Exception as e:
+    except Exception:
         pass
     return ""
 
 def submit_prompt_to_pane(pane_id, prompt_text):
     """
-    Submits prompt into pane terminal and presses Enter to execute.
+    Submits command or prompt to pane:
+    - If an active AI agent is registered -> submits via agent prompt.
+    - If NO agent is running (plain bash/zsh shell) -> submits directly to bash shell and executes with Enter.
     """
-    print(f"[HerdrBridge] Submitting prompt to pane {pane_id}: {prompt_text}")
+    print(f"[HerdrBridge] Dispatching prompt/command to pane {pane_id}: {prompt_text}")
     
-    # 1. Try herdr agent prompt
-    try:
-        res = subprocess.run(
-            ["/Users/chetan/.local/bin/herdr", "agent", "prompt", pane_id, prompt_text],
-            capture_output=True,
-            text=True,
-            timeout=3.0
-        )
-        if res.returncode == 0:
-            print("[HerdrBridge] agent prompt succeeded")
-            return True
-    except Exception:
-        pass
+    # 1. Check if pane has an active registered agent
+    resp = query_herdr_socket("session.snapshot")
+    agents = resp.get("result", {}).get("snapshot", {}).get("agents", [])
+    has_agent = any(a.get("pane_id") == pane_id or a.get("tab_id") == pane_id for a in agents)
+    
+    if has_agent:
+        try:
+            res = subprocess.run(
+                ["/Users/chetan/.local/bin/herdr", "agent", "prompt", pane_id, prompt_text],
+                capture_output=True,
+                text=True,
+                timeout=3.0
+            )
+            if res.returncode == 0:
+                print(f"[HerdrBridge] Agent prompt succeeded on {pane_id}")
+                return True
+        except Exception as e:
+            print(f"[HerdrBridge] Agent prompt error: {e}")
 
-    # 2. Try herdr pane run (which sends text AND Enter)
+    # 2. No agent running (or agent prompt not applicable) -> run directly in bash/zsh shell
+    print(f"[HerdrBridge] Submitting directly to bash/zsh shell on {pane_id}")
     try:
         res = subprocess.run(
             ["/Users/chetan/.local/bin/herdr", "pane", "run", pane_id, prompt_text],
@@ -112,20 +118,20 @@ def submit_prompt_to_pane(pane_id, prompt_text):
             timeout=3.0
         )
         if res.returncode == 0:
-            print("[HerdrBridge] pane run succeeded")
+            print(f"[HerdrBridge] Pane run succeeded on {pane_id}")
             return True
     except Exception:
         pass
 
-    # 3. Fallback to pane send-text + send-keys Enter
+    # 3. Fallback: send-text + send-keys Enter
     try:
         subprocess.run(["/Users/chetan/.local/bin/herdr", "pane", "send-text", pane_id, prompt_text], capture_output=True, text=True, timeout=2.0)
         time.sleep(0.05)
         subprocess.run(["/Users/chetan/.local/bin/herdr", "pane", "send-keys", pane_id, "Enter"], capture_output=True, text=True, timeout=2.0)
-        print("[HerdrBridge] pane send-text + Enter executed")
+        print(f"[HerdrBridge] Pane send-text + Enter executed on {pane_id}")
         return True
     except Exception as e:
-        print(f"[HerdrBridge] Error submitting prompt: {e}")
+        print(f"[HerdrBridge] Error submitting command: {e}")
         return False
 
 def get_synced_sessions_payload():
@@ -143,13 +149,14 @@ def get_synced_sessions_payload():
         pane = next((p for p in panes if p.get("tab_id") == tab_id), {})
         pane_id = pane.get("pane_id", tab_id)
         
-        agent_obj = next((a for a in agents if a.get("tab_id") == tab_id), {})
+        agent_obj = next((a for a in agents if a.get("tab_id") == tab_id or a.get("pane_id") == pane_id), {})
+        is_active_agent = bool(agent_obj.get("agent"))
         agent_name = agent_obj.get("agent") or pane.get("agent") or pane.get("terminal_title") or "Terminal"
         cwd = pane.get("cwd", "")
         project_name = os.path.basename(cwd) if cwd else ""
         
         title = f"{agent_name.upper()} • {project_name}" if project_name else f"{agent_name.upper()} (Tab {label})"
-        role = f"Herdr Agent in {project_name or cwd}" if cwd else "Herdr Agent"
+        role = f"Herdr Agent in {project_name or cwd}" if is_active_agent else f"Bash Shell in {project_name or cwd}"
         status = "ONLINE"
         
         sessions_list.append({
@@ -162,6 +169,7 @@ def get_synced_sessions_payload():
             "status": status,
             "agent": agent_name,
             "cwd": cwd,
+            "is_agent": is_active_agent,
             "model": "herdr/desktop"
         })
         
@@ -278,14 +286,15 @@ async def handle_client(websocket):
                         "type": "agent_status",
                         "session_id": session_id,
                         "status": "THINKING",
-                        "detail": "Executing prompt in Herdr terminal..."
+                        "detail": "Running in terminal..."
                     }))
                     
+                    # Submit to agent if running, otherwise directly to bash
                     submit_prompt_to_pane(pane_id, content)
-                    await asyncio.sleep(0.6)
+                    await asyncio.sleep(0.5)
                     
                     updated_output = read_pane_terminal(pane_id)
-                    tail_output = "\n".join(updated_output.splitlines()[-35:]) if updated_output else "Prompt submitted."
+                    tail_output = "\n".join(updated_output.splitlines()[-35:]) if updated_output else "Command executed."
                     
                     await websocket.send(json.dumps({
                         "type": "agent_status",
