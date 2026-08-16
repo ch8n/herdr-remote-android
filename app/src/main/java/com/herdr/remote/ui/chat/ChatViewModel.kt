@@ -97,7 +97,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private fun observeSettings() {
         viewModelScope.launch {
             settings.collect { cfg ->
-                if (!cfg.isMockMode && cfg.herdrServerUrl.isNotBlank()) {
+                if (cfg.herdrServerUrl.isNotBlank()) {
                     wsClient.connect(cfg.herdrServerUrl)
                 } else {
                     wsClient.disconnect()
@@ -351,12 +351,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _inputText.value = ""
         _pendingAttachments.value = emptyList()
 
-        // Dispatch to Server or Autonomous Simulator
-        if (settings.value.isMockMode) {
-            dispatchToSimulator(currentSession, userMessage)
-        } else {
-            wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
-        }
+        // Dispatch directly to connected Herdr cluster
+        wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
     }
 
     private fun dispatchToSimulator(session: Session, userMessage: Message) {

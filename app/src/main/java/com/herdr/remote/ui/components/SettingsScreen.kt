@@ -115,7 +115,6 @@ fun SettingsScreen(
     var showApiKey by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf(currentSettings.openRouterModel) }
     var serverUrl by remember { mutableStateOf(currentSettings.herdrServerUrl) }
-    var isMockMode by remember { mutableStateOf(currentSettings.isMockMode) }
     var autoRephrase by remember { mutableStateOf(currentSettings.autoRephraseOnSpeech) }
     var rephrasePrompt by remember { mutableStateOf(currentSettings.rephraseSystemPrompt) }
 
@@ -651,92 +650,57 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Mock Mode Switch
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Autonomous Mock Simulation",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Simulates agent reasoning & tool streaming without a live backend",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
-                        )
-                    }
-                    Switch(
-                        checked = isMockMode,
-                        onCheckedChange = {
-                            isMockMode = it
-                            onSaveSettings(currentSettings.copy(isMockMode = it))
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = AccentCyan,
-                            checkedTrackColor = AccentCyan.copy(alpha = 0.3f)
-                        )
+                    Text(
+                        text = "Herdr Remote URL",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = TextSecondary
                     )
-                }
 
-                // WebSocket Server URL Input (unlocked / enabled)
-                if (!isMockMode) {
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Herdr Remote URL",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = TextSecondary
-                        )
-
-                        // Quick Paste Tailscale format button
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceElevated)
-                                .border(1.dp, BorderSubtle, RoundedCornerShape(6.dp))
-                                .clickable {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = clipboard.primaryClip
-                                    if (clip != null && clip.itemCount > 0) {
-                                        val pasted = clip.getItemAt(0).text?.toString()?.trim() ?: ""
-                                        if (pasted.isNotBlank()) {
-                                            serverUrl = pasted
-                                            onSaveSettings(currentSettings.copy(herdrServerUrl = pasted, isMockMode = false))
-                                            Toast.makeText(context, "URL pasted & saved", Toast.LENGTH_SHORT).show()
-                                        }
-                                    } else {
-                                        Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                    // Quick Paste Tailscale format button
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(SurfaceElevated)
+                            .border(1.dp, BorderSubtle, RoundedCornerShape(6.dp))
+                            .clickable {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = clipboard.primaryClip
+                                if (clip != null && clip.itemCount > 0) {
+                                    val pasted = clip.getItemAt(0).text?.toString()?.trim() ?: ""
+                                    if (pasted.isNotBlank()) {
+                                        serverUrl = pasted
+                                        onSaveSettings(currentSettings.copy(herdrServerUrl = pasted))
+                                        Toast.makeText(context, "URL pasted & saved", Toast.LENGTH_SHORT).show()
                                     }
+                                } else {
+                                    Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
                                 }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentPaste,
-                                    contentDescription = "Paste",
-                                    tint = AccentCyan,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Paste URL",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                    color = AccentCyan
-                                )
                             }
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.ContentPaste,
+                                contentDescription = "Paste",
+                                tint = AccentCyan,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Paste URL",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                color = AccentCyan
+                            )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                     OutlinedTextField(
                         value = serverUrl,
@@ -871,7 +835,6 @@ fun SettingsScreen(
                             }
                         }
                     }
-                }
             }
 
             // Section 3: Voice & Speech Preferences
@@ -914,7 +877,6 @@ fun SettingsScreen(
                         openRouterApiKey = apiKey.trim(),
                         openRouterModel = selectedModel.trim(),
                         herdrServerUrl = serverUrl.trim(),
-                        isMockMode = isMockMode,
                         autoRephraseOnSpeech = autoRephrase,
                         rephraseSystemPrompt = rephrasePrompt.trim()
                     )

@@ -17,8 +17,7 @@ class SettingsRepository(context: Context) {
         return SettingsData(
             openRouterApiKey = prefs.getString(KEY_OPENROUTER_API_KEY, "") ?: "",
             openRouterModel = prefs.getString(KEY_OPENROUTER_MODEL, "openrouter/auto") ?: "openrouter/auto",
-            herdrServerUrl = prefs.getString(KEY_HERDR_URL, "ws://10.0.2.2:8080/herdr/ws") ?: "ws://10.0.2.2:8080/herdr/ws",
-            isMockMode = prefs.getBoolean(KEY_MOCK_MODE, true),
+            herdrServerUrl = prefs.getString(KEY_HERDR_URL, "ws://100.x.y.z:8080/herdr/ws") ?: "ws://100.x.y.z:8080/herdr/ws",
             autoRephraseOnSpeech = prefs.getBoolean(KEY_AUTO_REPHRASE, true),
             rephraseSystemPrompt = prefs.getString(KEY_REPHRASE_PROMPT, SettingsData.DEFAULT_REPHRASE_PROMPT) ?: SettingsData.DEFAULT_REPHRASE_PROMPT,
             agentTemperature = prefs.getFloat(KEY_AGENT_TEMPERATURE, 0.7f),
@@ -31,7 +30,6 @@ class SettingsRepository(context: Context) {
             .putString(KEY_OPENROUTER_API_KEY, newSettings.openRouterApiKey.trim())
             .putString(KEY_OPENROUTER_MODEL, newSettings.openRouterModel.trim())
             .putString(KEY_HERDR_URL, newSettings.herdrServerUrl.trim())
-            .putBoolean(KEY_MOCK_MODE, newSettings.isMockMode)
             .putBoolean(KEY_AUTO_REPHRASE, newSettings.autoRephraseOnSpeech)
             .putString(KEY_REPHRASE_PROMPT, newSettings.rephraseSystemPrompt)
             .putFloat(KEY_AGENT_TEMPERATURE, newSettings.agentTemperature)
@@ -53,11 +51,6 @@ class SettingsRepository(context: Context) {
 
     fun updateServerUrl(url: String) {
         val updated = _settings.value.copy(herdrServerUrl = url.trim())
-        updateSettings(updated)
-    }
-
-    fun toggleMockMode(enabled: Boolean) {
-        val updated = _settings.value.copy(isMockMode = enabled)
         updateSettings(updated)
     }
 
