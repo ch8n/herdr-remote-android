@@ -77,16 +77,86 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-## ⚙️ Configuration
+---
 
-1. **OpenRouter AI Key**:
-   - Open **Settings** (⚙️ top right).
-   - Paste your OpenRouter API key (`sk-or-v1-...`).
-   - Tap **Test API Key** to verify connection and load all available AI models.
+## 🖥️ Herdr Remote Control Setup & Guide
 
-2. **Connecting to Herdr Node**:
-   - **Autonomous Simulation Mode**: Enable *Autonomous Mock Simulation* in Settings to test all agent features, tool simulations, and reasoning without a backend.
-   - **Live Backend / Tailscale Mode**: Toggle off Mock Mode, paste your WebSocket URL (e.g., `ws://100.x.y.z:8080/herdr/ws`), and tap **Save Preferences**.
+Herdr Remote connects the Android app directly to your desktop **Herdr** autonomous coding agent sessions and terminal panes in real-time over local Wi-Fi, LAN, or Tailscale WireGuard VPN.
+
+### 📐 Architecture Overview
+
+```
+┌───────────────────────────┐         ┌──────────────────────────────┐         ┌─────────────────────────────────┐
+│   Android Phone (App)     │  Wi-Fi  │   herdr-bridge.py (Daemon)   │  Local  │    Herdr Desktop / Agents       │
+│  (100.122.158.96:42689)   │ ──────> │      (0.0.0.0:8765)          │ ──────> │ (~/.config/herdr/herdr.sock)    │
+│  WebSocket Client         │ Tailnet │  WebSocket ⇄ Socket Bridge   │  Unix   │ Terminal Panes & Shells         │
+└───────────────────────────┘         └──────────────────────────────┘ Socket  └─────────────────────────────────┘
+```
+
+---
+
+### ⚡ Quick Start: Running the Remote Bridge
+
+The repository includes a management CLI (`scripts/herdr-remote`) and Python daemon (`herdr-bridge.py`).
+
+#### 1. Prerequisites (on your Mac / Host Machine)
+- Python 3.9+ with `websockets` library:
+  ```bash
+  pip3 install websockets
+  ```
+- **Herdr** CLI installed and running:
+  ```bash
+  herdr session list
+  ```
+
+#### 2. Start the Remote Bridge Daemon
+Run the management script from the project root:
+
+```bash
+# Start bridge daemon in the background (binds to ws://0.0.0.0:8765)
+./scripts/herdr-remote start
+
+# Check status & connected socket
+./scripts/herdr-remote status
+
+# View live streaming terminal logs
+./scripts/herdr-remote logs
+```
+
+#### 3. CLI Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `./scripts/herdr-remote start` | Starts the WebSocket daemon in background |
+| `./scripts/herdr-remote stop` | Stops the running daemon |
+| `./scripts/herdr-remote restart` | Restarts the bridge daemon |
+| `./scripts/herdr-remote status` | Checks port `8765` and Unix socket connectivity |
+| `./scripts/herdr-remote logs` | Tails live bridge event logs |
+| `./scripts/herdr-remote foreground` | Runs the bridge in interactive foreground mode |
+| `./scripts/herdr-remote install-service` | Installs macOS `LaunchAgent` to auto-start on boot |
+| `./scripts/herdr-remote uninstall-service` | Removes macOS `LaunchAgent` service |
+
+#### 4. Optional: Zero-Touch Auto-Start (macOS LaunchAgent)
+To have the bridge start automatically on macOS login without running terminal commands:
+
+```bash
+./scripts/herdr-remote install-service
+```
+
+---
+
+### 📱 Connecting the Android App
+
+1. Open **Settings** (⚙️ top right in the Android app).
+2. Toggle **Mock Mode** to `OFF`.
+3. Set the **WebSocket URL**:
+   - **Over Local Wi-Fi**: `ws://<YOUR_MAC_LOCAL_IP>:8765` (e.g., `ws://192.168.1.100:8765`)
+   - **Over Tailscale VPN**: `ws://<YOUR_MAC_TAILSCALE_IP>:8765` (e.g., `ws://100.122.158.96:8765`)
+4. Tap **Save Preferences**.
+5. The app will immediately establish a live connection:
+   - All active desktop tabs and agent names will appear in the top tab bar.
+   - Live stdout/stderr terminal streams and AI responses will stream in real time.
+   - Switching, opening, or closing tabs on the phone automatically mirrors on your desktop.
 
 ---
 
