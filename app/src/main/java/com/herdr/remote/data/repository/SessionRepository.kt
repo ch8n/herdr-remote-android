@@ -186,13 +186,30 @@ How can I assist your workflow today?
     fun addMessage(message: Message) {
         val currentMap = _messagesMap.value.toMutableMap()
         val list = currentMap[message.sessionId] ?: emptyList()
-        val existingIndex = list.indexOfFirst { it.id == message.id }
-        if (existingIndex >= 0) {
-            val updated = list.toMutableList()
-            updated[existingIndex] = message
-            currentMap[message.sessionId] = updated
-        } else {
+
+        if (message.sender == MessageSender.USER) {
+            // User message -> always create new chat bubble
             currentMap[message.sessionId] = list + message
+        } else {
+            // Agent message / Real-time terminal streaming:
+            val existingIndex = list.indexOfFirst { it.id == message.id }
+            if (existingIndex >= 0) {
+                // Update existing message in place
+                val updated = list.toMutableList()
+                updated[existingIndex] = message
+                currentMap[message.sessionId] = updated
+            } else {
+                val lastMsg = list.lastOrNull()
+                if (lastMsg != null && lastMsg.sender == MessageSender.AGENT) {
+                    // Update the existing agent bubble in place (no spamming)
+                    val updated = list.toMutableList()
+                    updated[updated.size - 1] = message.copy(id = lastMsg.id)
+                    currentMap[message.sessionId] = updated
+                } else {
+                    // First agent response after user message -> add new agent bubble
+                    currentMap[message.sessionId] = list + message
+                }
+            }
         }
         _messagesMap.value = currentMap
     }
