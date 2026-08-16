@@ -65,8 +65,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,19 +136,69 @@ fun ChatScreen(
     val isRecording = speechState is SpeechState.Listening || speechState is SpeechState.Initializing || isRephrasing
 
     val listState = rememberLazyListState()
-    val showScrollToBottom by remember {
+
+    val isAtBottom by remember {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 2
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            if (totalItems <= 1) true
+            else {
+                val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()
+                lastVisible != null && lastVisible.index >= totalItems - 2
+            }
         }
     }
 
-    // Auto-scroll to the very end of the last message when messages change or tab switches
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content, activeSessionId) {
+    val showScrollToBottom by remember {
+        derivedStateOf {
+            !isAtBottom
+        }
+    }
+
+    var hasUnreadMessagesBelow by remember { mutableStateOf(false) }
+
+    // Clear red dot when user reaches bottom
+    LaunchedEffect(isAtBottom) {
+        if (isAtBottom) {
+            hasUnreadMessagesBelow = false
+        }
+    }
+
+    // Scroll to end when tab switches
+    LaunchedEffect(activeSessionId) {
+        hasUnreadMessagesBelow = false
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(
                 index = messages.size,
                 scrollOffset = 100_000
             )
+        }
+    }
+
+    // When new messages or streaming updates arrive
+    var lastKnownMessageSize by remember { mutableStateOf(messages.size) }
+    var lastKnownMessageContent by remember { mutableStateOf(messages.lastOrNull()?.content ?: "") }
+
+    LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
+        val currentSize = messages.size
+        val currentContent = messages.lastOrNull()?.content ?: ""
+
+        val isNewContent = currentSize != lastKnownMessageSize || currentContent != lastKnownMessageContent
+        lastKnownMessageSize = currentSize
+        lastKnownMessageContent = currentContent
+
+        if (isNewContent && messages.isNotEmpty()) {
+            if (isAtBottom) {
+                // If user is already at bottom, smoothly keep up with streaming
+                listState.animateScrollToItem(
+                    index = messages.size,
+                    scrollOffset = 100_000
+                )
+                hasUnreadMessagesBelow = false
+            } else {
+                // User has scrolled up -> DO NOT autoscroll, show red dot alert
+                hasUnreadMessagesBelow = true
+            }
         }
     }
 
@@ -377,32 +429,49 @@ fun ChatScreen(
                     }
 
                     // Jump to Bottom FAB
+                    // Jump to Bottom FAB with Unread Red Dot Alert
                     if (showScrollToBottom) {
-                        FloatingActionButton(
-                            onClick = {
-                                scope.launch {
-                                    if (messages.isNotEmpty()) {
-                                        listState.animateScrollToItem(
-                                            index = messages.size,
-                                            scrollOffset = 100_000
-                                        )
-                                    }
-                                }
-                            },
-                            containerColor = SurfaceElevated,
-                            contentColor = AccentPrimary,
-                            elevation = FloatingActionButtonDefaults.elevation(4.dp),
-                            shape = CircleShape,
+                        Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(16.dp)
-                                .size(40.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Scroll to bottom",
-                                modifier = Modifier.size(22.dp)
-                            )
+                            FloatingActionButton(
+                                onClick = {
+                                    hasUnreadMessagesBelow = false
+                                    scope.launch {
+                                        if (messages.isNotEmpty()) {
+                                            listState.animateScrollToItem(
+                                                index = messages.size,
+                                                scrollOffset = 100_000
+                                            )
+                                        }
+                                    }
+                                },
+                                containerColor = SurfaceElevated,
+                                contentColor = if (hasUnreadMessagesBelow) AccentRose else AccentCyan,
+                                elevation = FloatingActionButtonDefaults.elevation(4.dp),
+                                shape = CircleShape,
+                                modifier = Modifier.size(42.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Scroll to bottom",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            // Red Dot Alert badge when unread content is waiting below
+                            if (hasUnreadMessagesBelow) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(13.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFEF4444))
+                                        .border(2.dp, SurfaceDark, CircleShape)
+                                )
+                            }
                         }
                     }
                 }
