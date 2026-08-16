@@ -101,7 +101,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel) {
+fun ChatScreen(
+    viewModel: ChatViewModel,
+    onOpenSettings: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -117,7 +120,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val isRephrasing by viewModel.isRephrasing.collectAsState()
     val comparisonDialog by viewModel.comparisonDialog.collectAsState()
 
-    val isSettingsOpen by viewModel.isSettingsOpen.collectAsState()
     val isNewSessionDialogOpen by viewModel.isNewSessionDialogOpen.collectAsState()
     val isAttachmentSheetOpen by viewModel.isAttachmentSheetOpen.collectAsState()
     val previewImageUrl by viewModel.previewImageUrl.collectAsState()
@@ -199,16 +201,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
         }
     }
 
-    // Settings Screen View
-    if (isSettingsOpen) {
-        SettingsScreen(
-            currentSettings = settings,
-            onSaveSettings = { viewModel.saveSettings(it) },
-            onBack = { viewModel.closeSettings() }
-        )
-        return
-    }
-
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -230,7 +222,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         session = currentSession,
                         autoRephraseEnabled = settings.autoRephraseOnSpeech,
                         onToggleAutoRephrase = { viewModel.toggleAutoRephrase() },
-                        onOpenSettings = { viewModel.openSettings() },
+                        onOpenSettings = onOpenSettings,
                         onClearChat = { viewModel.clearChat() },
                         onNewSession = { viewModel.openNewSessionDialog() }
                     )

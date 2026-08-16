@@ -6,14 +6,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.herdr.remote.navigation.NavDisplay
+import com.herdr.remote.navigation.Navigator
+import com.herdr.remote.navigation.ScreenKey
+import com.herdr.remote.navigation.rememberNavigator
 import com.herdr.remote.ui.chat.ChatScreen
 import com.herdr.remote.ui.chat.ChatViewModel
+import com.herdr.remote.ui.components.ModelSelectorScreen
+import com.herdr.remote.ui.components.SettingsScreen
 import com.herdr.remote.ui.theme.HerdrRemoteTheme
 import com.herdr.remote.util.NotificationHelper
 
 class MainActivity : ComponentActivity() {
 
     private val chatViewModel: ChatViewModel by viewModels()
+    private var activeNavigator: Navigator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -24,7 +33,44 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HerdrRemoteTheme {
-                ChatScreen(viewModel = chatViewModel)
+                val navigator = rememberNavigator(ScreenKey.Chat)
+                activeNavigator = navigator
+
+                val settings by chatViewModel.settings.collectAsState()
+
+                NavDisplay(navigator = navigator) { screen ->
+                    when (screen) {
+                        is ScreenKey.Chat -> {
+                            ChatScreen(
+                                viewModel = chatViewModel,
+                                onOpenSettings = { navigator.navigate(ScreenKey.Settings) }
+                            )
+                        }
+
+                        is ScreenKey.Settings -> {
+                            SettingsScreen(
+                                currentSettings = settings,
+                                onSaveSettings = { chatViewModel.saveSettings(it) },
+                                onBack = { navigator.popBackStack() },
+                                onOpenModelSelector = { modelId ->
+                                    navigator.navigate(ScreenKey.ModelSelector(modelId))
+                                }
+                            )
+                        }
+
+                        is ScreenKey.ModelSelector -> {
+                            ModelSelectorScreen(
+                                selectedModelId = screen.currentModelId,
+                                apiKey = settings.openRouterApiKey,
+                                onSelectModel = { modelId ->
+                                    chatViewModel.saveSettings(settings.copy(openRouterModel = modelId))
+                                    navigator.popBackStack()
+                                },
+                                onBack = { navigator.popBackStack() }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -39,6 +85,7 @@ class MainActivity : ComponentActivity() {
         val targetSessionId = intent?.getStringExtra(NotificationHelper.EXTRA_SESSION_ID)
         if (!targetSessionId.isNullOrBlank()) {
             chatViewModel.selectSession(targetSessionId)
+            activeNavigator?.popToRoot()
         }
     }
 }
