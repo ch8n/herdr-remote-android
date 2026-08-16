@@ -3,7 +3,8 @@
 Herdr Remote WebSocket Bridge & Real-Time Bi-Directional Workspace Sync Daemon
 Bridges ~/.config/herdr/herdr.sock to WebSocket on port 8765.
 
-Full Bi-Directional Tab Synchronization:
+Full Bi-Directional Tab & Title Synchronization:
+- 1-to-1 Mirroring: Tab titles match desktop tab numbering, labels, active agent, and directory.
 - Tab Creation: Tap '+ New Tab' on Android -> runs 'herdr tab create --focus' on desktop -> syncs to both.
 - Tab Closing: Tap 'x' on tab in Android -> runs 'herdr tab close <id>' on desktop -> syncs to both.
 - Tab Switching: Select tab on Android -> runs 'herdr tab focus <id>' on desktop.
@@ -148,12 +149,23 @@ def get_synced_sessions_payload():
         
         agent_obj = next((a for a in agents if a.get("tab_id") == tab_id or a.get("pane_id") == pane_id), {})
         is_active_agent = bool(agent_obj.get("agent"))
-        agent_name = agent_obj.get("agent") or pane.get("agent") or pane.get("terminal_title") or "Terminal"
-        cwd = pane.get("cwd", "")
-        project_name = os.path.basename(cwd) if cwd else ""
+        agent_name = agent_obj.get("agent") or pane.get("agent") or pane.get("terminal_title") or "zsh"
+        cwd = pane.get("foreground_cwd") or pane.get("cwd") or ""
+        dir_name = os.path.basename(cwd) if cwd else ""
         
-        title = f"{agent_name.upper()} • {project_name}" if project_name else f"{agent_name.upper()} (Tab {label})"
-        role = f"Herdr Agent in {project_name or cwd}" if is_active_agent else f"Bash Shell in {project_name or cwd}"
+        # Mirroring desktop tab title structure exactly:
+        if label and not label.isdigit():
+            title = label
+        elif label and dir_name:
+            title = f"{label} • {agent_name} ({dir_name})"
+        elif label:
+            title = f"{label} • {agent_name}"
+        elif dir_name:
+            title = f"{agent_name} • {dir_name}"
+        else:
+            title = f"{agent_name.upper()}"
+            
+        role = f"Herdr Agent in {dir_name or cwd}" if is_active_agent else f"Shell in {dir_name or cwd}"
         status = "ONLINE"
         
         sessions_list.append({
@@ -162,6 +174,7 @@ def get_synced_sessions_payload():
             "pane_id": pane_id,
             "title": title,
             "name": title,
+            "label": label,
             "role": role,
             "status": status,
             "agent": agent_name,
@@ -189,10 +202,10 @@ async def live_terminal_watcher(websocket, client_ip):
             
             payload = get_synced_sessions_payload()
             sessions = payload.get("sessions", [])
-            tab_ids = ",".join(s["id"] for s in sessions)
+            tab_ids = ",".join(f"{s['id']}:{s['title']}" for s in sessions)
             focused_tab_id = payload.get("focused_tab_id", "")
             
-            # 1. Check if tabs created/closed on desktop
+            # 1. Check if tabs or titles changed on desktop
             if tab_ids != last_tab_hash:
                 last_tab_hash = tab_ids
                 await websocket.send(json.dumps(payload))
@@ -307,6 +320,15 @@ async def handle_client(websocket):
                         subprocess.run(["/Users/chetan/.local/bin/herdr", "tab", "close", target_id], capture_output=True, text=True, timeout=3.0)
                         
                         await asyncio.sleep(0.2)
+                        payload = get_synced_sessions_payload()
+                        await websocket.send(json.dumps(payload))
+                
+                elif msg_type in ("rename_tab", "rename_session"):
+                    target_id = data.get("tab_id") or data.get("session_id") or ""
+                    new_label = data.get("label") or data.get("title") or ""
+                    if target_id and new_label:
+                        subprocess.run(["/Users/chetan/.local/bin/herdr", "tab", "rename", target_id, new_label], capture_output=True, text=True, timeout=2.0)
+                        await asyncio.sleep(0.1)
                         payload = get_synced_sessions_payload()
                         await websocket.send(json.dumps(payload))
                 

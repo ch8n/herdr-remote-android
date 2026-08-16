@@ -378,7 +378,11 @@ class HerdrWebSocketClient(
             name = title,
             role = role,
             avatarEmoji = when {
-                title.contains("code", true) || role.contains("engineer", true) -> "⚡"
+                title.contains("grok", true) || role.contains("grok", true) -> "⚡"
+                title.contains("claude", true) || role.contains("claude", true) -> "🧠"
+                title.contains("gemini", true) || role.contains("gemini", true) -> "✨"
+                title.contains("zsh", true) || title.contains("bash", true) || title.contains("sh", true) -> "💻"
+                title.contains("code", true) || role.contains("engineer", true) -> "🛠️"
                 title.contains("research", true) || role.contains("research", true) -> "🔬"
                 title.contains("review", true) -> "🎯"
                 else -> "🤖"
