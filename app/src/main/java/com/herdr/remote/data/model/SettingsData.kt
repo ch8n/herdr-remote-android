@@ -3,7 +3,7 @@ package com.herdr.remote.data.model
 data class SettingsData(
     val openRouterApiKey: String = "",
     val openRouterModel: String = "openrouter/auto",
-    val herdrServerUrl: String = "ws://100.x.y.z:8080/herdr/ws",
+    val herdrServerUrl: String = "ws://100.108.120.53:8765",
     val autoRephraseOnSpeech: Boolean = true,
     val rephraseSystemPrompt: String = DEFAULT_REPHRASE_PROMPT,
     val agentTemperature: Float = 0.7f,
