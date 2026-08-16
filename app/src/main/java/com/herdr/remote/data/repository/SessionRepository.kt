@@ -28,39 +28,9 @@ class SessionRepository(
     val messagesMap: StateFlow<Map<String, List<Message>>> = _messagesMap.asStateFlow()
 
     init {
-        val defaultProfile = AgentProfile.PRESET_PROFILES[0]
-        val initialSession = Session(
-            id = "default_cluster",
-            title = "Herdr Main Cluster",
-            agentProfile = defaultProfile,
-            status = AgentConnectionStatus.ONLINE,
-            statusDetail = "Online • Ready for commands"
-        )
-        val welcomeMessage = Message(
-            id = UUID.randomUUID().toString(),
-            sessionId = initialSession.id,
-            sender = MessageSender.AGENT,
-            content = """
-👋 **Welcome to Herdr Remote Android!**
-
-I am **${defaultProfile.name}**, your autonomous system coordinator.
-
-✨ **Capabilities & Controls**:
-- **Multi-Session Tabs**: Tap `+ New Tab` above to spawn and switch specialized sub-agents.
-- **Sync Desktop Tabs**: Tap `🔄` in the tab bar or in the agent header to pull live desktop workspace tabs.
-- **Voice & AI Rephrase**: Use the mic button to speak naturally. Verbal fillers (*um*, *uh*) are cleaned via OpenRouter AI.
-- **Tools & Approvals**: Approve or reject elevated bash/file executions with 1 tap.
-
-How can I assist your workflow today?
-            """.trimIndent(),
-            status = MessageStatus.SENT,
-            thought = "Autonomous agent system initialized. Subsystems online: Multi-session tabs, WebSocket sync, Speech Synthesizer."
-        )
-
-        _sessions.value = listOf(initialSession)
-        val savedSessionId = settingsRepository?.getLastActiveSessionId() ?: ""
-        _activeSessionId.value = if (savedSessionId.isNotBlank()) savedSessionId else initialSession.id
-        _messagesMap.value = mapOf(initialSession.id to listOf(welcomeMessage))
+        _sessions.value = emptyList()
+        _activeSessionId.value = settingsRepository?.getLastActiveSessionId() ?: ""
+        _messagesMap.value = emptyMap()
     }
 
     fun createSession(
@@ -320,9 +290,9 @@ How can I assist your workflow today?
             }
         }
 
-        // Keep active local sessions that were not in remote list
+        // Keep active local sessions that were not in remote list (excluding default_cluster)
         val localPreserved = currentList.filter { local ->
-            remoteSessions.none { it.id == local.id }
+            local.id != "default_cluster" && remoteSessions.none { it.id == local.id }
         }
         val mergedSessions = (newSessionsList + localPreserved).distinctBy { it.id }
 
