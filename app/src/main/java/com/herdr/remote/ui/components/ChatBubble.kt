@@ -79,6 +79,7 @@ import com.herdr.remote.data.model.MessageSender
 import com.herdr.remote.data.model.MessageStatus
 import com.herdr.remote.data.model.ToolExecution
 import com.herdr.remote.data.model.ToolStatus
+import com.herdr.remote.ui.theme.AccentAmber
 import com.herdr.remote.ui.theme.AccentCyan
 import com.herdr.remote.ui.theme.AccentEmerald
 import com.herdr.remote.ui.theme.AccentPrimary
@@ -285,6 +286,38 @@ fun ChatBubble(
                                     contentDescription = "Copy message",
                                     tint = TextMuted,
                                     modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // OpenRouter Fallback Disclaimer Badge
+                    if (!message.fallbackModel.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(AccentAmber.copy(alpha = 0.12f))
+                                .border(1.dp, AccentAmber.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = AccentAmber,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "Fallback: OpenRouter (${message.fallbackModel})",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    color = AccentAmber
                                 )
                             }
                         }

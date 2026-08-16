@@ -16,6 +16,7 @@ import com.herdr.remote.data.model.ToolExecution
 import com.herdr.remote.data.network.HerdrAgentSimulator
 import com.herdr.remote.data.network.HerdrServerEvent
 import com.herdr.remote.data.network.HerdrWebSocketClient
+import com.herdr.remote.data.network.OpenRouterMessage
 import com.herdr.remote.data.network.OpenRouterService
 import com.herdr.remote.data.network.SimulatedStep
 import com.herdr.remote.data.repository.SessionRepository
@@ -459,73 +460,85 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _inputText.value = ""
         _pendingAttachments.value = emptyList()
 
-        // 4. Dispatch to connected Herdr daemon or simulator
+        // 4. Dispatch to connected Herdr daemon or OpenRouter Fallback
         if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
             wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
         } else {
-            dispatchToSimulator(currentSession, userMessage)
+            dispatchToOpenRouterFallback(currentSession, userMessage, pendingAgentMessage)
         }
     }
 
-    private fun dispatchToSimulator(session: Session, userMessage: Message) {
+    private fun dispatchToOpenRouterFallback(
+        session: Session,
+        userMessage: Message,
+        pendingAgentMessage: Message
+    ) {
         activeSimulationJob?.cancel()
         activeSimulationJob = viewModelScope.launch {
-            val pendingAgentMessage = Message(
-                sessionId = session.id,
-                sender = MessageSender.AGENT,
-                content = "",
-                status = MessageStatus.STREAMING
+            val cfg = settings.value
+            val modelName = cfg.openRouterModel.ifBlank { "openrouter/auto" }
+
+            sessionRepository.updateMessage(
+                pendingAgentMessage.copy(
+                    fallbackModel = modelName,
+                    status = MessageStatus.STREAMING
+                )
             )
-            sessionRepository.addMessage(pendingAgentMessage)
+            sessionRepository.updateSessionStatus(
+                session.id,
+                AgentConnectionStatus.STREAMING,
+                "Fallback: OpenRouter ($modelName)..."
+            )
 
-            agentSimulator.generateAgentResponse(
-                sessionId = session.id,
-                prompt = userMessage.content,
-                attachments = userMessage.attachments,
-                agentProfile = session.agentProfile
-            ).collect { step ->
-                when (step) {
-                    is SimulatedStep.StatusUpdate -> {
-                        sessionRepository.updateSessionStatus(session.id, step.status, step.detail)
-                    }
-                    is SimulatedStep.ThoughtUpdate -> {
-                        sessionRepository.updateMessage(pendingAgentMessage.copy(thought = step.thought))
-                    }
-                    is SimulatedStep.ToolStart -> {
-                        val currentList = sessionRepository.messagesMap.value[session.id] ?: emptyList()
-                        val current = currentList.find { it.id == pendingAgentMessage.id } ?: pendingAgentMessage
-                        val tools = current.toolExecutions + step.tool
-                        sessionRepository.updateMessage(current.copy(toolExecutions = tools))
-
-                        if (step.tool.requiresPermission || step.tool.status == com.herdr.remote.data.model.ToolStatus.REQUIRES_APPROVAL) {
-                            val currentSession = sessions.value.find { it.id == session.id } ?: session
-                            com.herdr.remote.util.NotificationHelper.sendPermissionRequestNotification(
-                                getApplication(),
-                                currentSession,
-                                step.tool,
-                                step.tool.permissionPrompt
-                            )
-                        }
-                    }
-                    is SimulatedStep.ToolEnd -> {
-                        val currentList = sessionRepository.messagesMap.value[session.id] ?: emptyList()
-                        val current = currentList.find { it.id == pendingAgentMessage.id } ?: pendingAgentMessage
-                        val tools = current.toolExecutions.map { if (it.id == step.tool.id) step.tool else it }
-                        sessionRepository.updateMessage(current.copy(toolExecutions = tools))
-                    }
-                    is SimulatedStep.StreamToken -> {
-                        sessionRepository.appendStreamChunkToLastAgentMessage(session.id, step.token)
-                    }
-                    is SimulatedStep.Complete -> {
-                        sessionRepository.updateMessage(step.message.copy(id = pendingAgentMessage.id))
-                        val currentSession = sessions.value.find { it.id == session.id } ?: session
-                        com.herdr.remote.util.NotificationHelper.sendTaskCompletedNotification(
-                            getApplication(),
-                            currentSession,
-                            step.message
-                        )
-                    }
+            // Collect history of session for context
+            val history = sessionRepository.messagesMap.value[session.id] ?: emptyList()
+            val openRouterMessages = history.takeLast(12).mapNotNull { msg ->
+                when (msg.sender) {
+                    MessageSender.USER -> OpenRouterMessage(role = "user", content = msg.content)
+                    MessageSender.AGENT -> if (msg.content.isNotBlank() && msg.id != pendingAgentMessage.id) {
+                        OpenRouterMessage(role = "assistant", content = msg.content)
+                    } else null
+                    MessageSender.SYSTEM -> null
                 }
+            }
+
+            val result = openRouterService.streamChatCompletion(
+                apiKey = cfg.openRouterApiKey,
+                model = modelName,
+                messages = openRouterMessages.ifEmpty {
+                    listOf(OpenRouterMessage(role = "user", content = userMessage.content))
+                },
+                systemPrompt = "You are an expert AI software engineer and autonomous agent pair programmer assisting the user in their workspace. Format responses cleanly with markdown and code blocks."
+            ) { chunk ->
+                sessionRepository.appendStreamChunkToLastAgentMessage(session.id, chunk)
+            }
+
+            if (result.isSuccess) {
+                val fullContent = result.getOrNull() ?: ""
+                val completedMessage = pendingAgentMessage.copy(
+                    content = fullContent,
+                    status = MessageStatus.SENT,
+                    fallbackModel = modelName
+                )
+                sessionRepository.updateMessage(completedMessage)
+                sessionRepository.updateSessionStatus(session.id, AgentConnectionStatus.OFFLINE, "OpenRouter Fallback Ready")
+
+                val currentSession = sessions.value.find { it.id == session.id } ?: session
+                com.herdr.remote.util.NotificationHelper.sendTaskCompletedNotification(
+                    getApplication(),
+                    currentSession,
+                    completedMessage
+                )
+            } else {
+                val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error"
+                sessionRepository.updateMessage(
+                    pendingAgentMessage.copy(
+                        content = "⚠️ OpenRouter Fallback Error: $errorMsg\n\nPlease verify your OpenRouter API Key or selected model in Preferences (⚙️).",
+                        status = MessageStatus.ERROR,
+                        fallbackModel = modelName
+                    )
+                )
+                sessionRepository.updateSessionStatus(session.id, AgentConnectionStatus.OFFLINE, "Fallback Error")
             }
         }
     }

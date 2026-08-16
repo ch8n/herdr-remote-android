@@ -306,4 +306,90 @@ class OpenRouterService {
 
         return text
     }
+
+    /**
+     * Streams chat completion response from OpenRouter API chunk by chunk.
+     * Falls back gracefully if no API key is provided.
+     */
+    suspend fun streamChatCompletion(
+        apiKey: String,
+        model: String,
+        messages: List<OpenRouterMessage>,
+        systemPrompt: String? = null,
+        onChunk: (String) -> Unit
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val resolvedModel = if (model.isBlank()) "openrouter/auto" else model
+        val effectiveApiKey = apiKey.trim()
+        val allMessages = mutableListOf<OpenRouterMessage>()
+        if (!systemPrompt.isNullOrBlank()) {
+            allMessages.add(OpenRouterMessage(role = "system", content = systemPrompt))
+        }
+        allMessages.addAll(messages)
+
+        if (effectiveApiKey.isBlank()) {
+            // Local fallback response when no API key configured
+            val fallbackContent = "Herdr desktop daemon is currently offline. To enable cloud AI chatting, configure your OpenRouter API Key in Preferences (⚙️).\n\nYour prompt: \"${messages.lastOrNull()?.content ?: ""}\""
+            val words = fallbackContent.split(" ")
+            val sb = StringBuilder()
+            for (word in words) {
+                kotlinx.coroutines.delay(35)
+                val chunk = if (sb.isEmpty()) word else " $word"
+                sb.append(chunk)
+                withContext(Dispatchers.Main) { onChunk(chunk) }
+            }
+            return@withContext Result.success(sb.toString())
+        }
+
+        try {
+            val requestMap = mapOf(
+                "model" to resolvedModel,
+                "messages" to allMessages,
+                "stream" to true,
+                "temperature" to 0.7f
+            )
+            val jsonBody = gson.toJson(requestMap)
+            val request = Request.Builder()
+                .url("https://openrouter.ai/api/v1/chat/completions")
+                .addHeader("Authorization", "Bearer $effectiveApiKey")
+                .addHeader("HTTP-Referer", "https://github.com/ch8n/herdr-remote-android")
+                .addHeader("X-Title", "Herdr Remote Android")
+                .post(jsonBody.toRequestBody(jsonMediaType))
+                .build()
+
+            val fullAccumulated = StringBuilder()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errStr = response.body?.string() ?: "HTTP ${response.code}"
+                    throw Exception("OpenRouter API error ($errStr)")
+                }
+                val source = response.body?.source() ?: throw Exception("Empty response body")
+                while (!source.exhausted()) {
+                    val line = source.readUtf8Line() ?: break
+                    if (line.startsWith("data: ")) {
+                        val data = line.removePrefix("data: ").trim()
+                        if (data == "[DONE]") break
+                        try {
+                            val chunkJson = gson.fromJson(data, com.google.gson.JsonObject::class.java)
+                            val choices = chunkJson.getAsJsonArray("choices")
+                            if (choices != null && choices.size() > 0) {
+                                val delta = choices.get(0).asJsonObject.getAsJsonObject("delta")
+                                if (delta != null && delta.has("content")) {
+                                    val token = delta.get("content").asString
+                                    fullAccumulated.append(token)
+                                    withContext(Dispatchers.Main) {
+                                        onChunk(token)
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // ignore malformed SSE frames
+                        }
+                    }
+                }
+            }
+            Result.success(fullAccumulated.toString())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

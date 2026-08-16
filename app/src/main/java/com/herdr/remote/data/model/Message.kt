@@ -26,5 +26,6 @@ data class Message(
     val toolExecutions: List<ToolExecution> = emptyList(),
     val thought: String? = null,
     val originalSpokenText: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val fallbackModel: String? = null
 )
