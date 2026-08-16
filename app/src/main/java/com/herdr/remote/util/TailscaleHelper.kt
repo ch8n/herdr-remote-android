@@ -32,10 +32,16 @@ object TailscaleHelper {
 
     fun isTailscaleInstalled(context: Context): Boolean {
         return try {
-            context.packageManager.getPackageInfo(TAILSCALE_PACKAGE, 0)
-            true
-        } catch (e: PackageManager.NameNotFoundException) {
-            false
+            val pm = context.packageManager
+            val info = pm.getPackageInfo(TAILSCALE_PACKAGE, 0)
+            info != null
+        } catch (e: Exception) {
+            try {
+                val launch = context.packageManager.getLaunchIntentForPackage(TAILSCALE_PACKAGE)
+                launch != null
+            } catch (ex: Exception) {
+                false
+            }
         }
     }
 
@@ -102,16 +108,37 @@ object TailscaleHelper {
     }
 
     fun openTailscaleOrPlayStore(context: Context) {
-        if (isTailscaleInstalled(context)) {
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(TAILSCALE_PACKAGE)
+        val pm = context.packageManager
+
+        // 1. Direct launch intent for package
+        try {
+            val launchIntent = pm.getLaunchIntentForPackage(TAILSCALE_PACKAGE)
             if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                 context.startActivity(launchIntent)
                 return
             }
+        } catch (e: Exception) {
+            // Fall through to query
         }
 
-        // Otherwise open Google Play Store
+        // 2. Explicit MAIN/LAUNCHER query for package
+        try {
+            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage(TAILSCALE_PACKAGE)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val matches = pm.queryIntentActivities(launcherIntent, 0)
+            if (matches.isNotEmpty()) {
+                context.startActivity(launcherIntent)
+                return
+            }
+        } catch (e: Exception) {
+            // Fall through to Play Store
+        }
+
+        // 3. Fallback to Google Play Store only if app is not installed
         try {
             val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$TAILSCALE_PACKAGE")).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
