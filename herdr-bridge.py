@@ -217,6 +217,18 @@ def get_synced_sessions_payload():
         role = f"Herdr Agent in {dir_name or cwd}" if is_active_agent else f"Shell in {dir_name or cwd}"
         status = "ONLINE"
         
+        output = get_pane_turn_output(pane_id)
+        pane_msgs = []
+        if output:
+            pane_msgs = [{
+                "id": f"msg_term_{tab_id}",
+                "sessionId": tab_id,
+                "sender": "AGENT",
+                "content": output,
+                "status": "SENT"
+            }]
+            session_messages[tab_id] = pane_msgs
+
         sessions_list.append({
             "id": tab_id,
             "session_id": tab_id,
@@ -229,18 +241,11 @@ def get_synced_sessions_payload():
             "agent": agent_name,
             "cwd": cwd,
             "is_agent": is_active_agent,
-            "model": "herdr/desktop"
+            "model": "herdr/desktop",
+            "messages": pane_msgs,
+            "content": output or "",
+            "last_output": output or ""
         })
-        
-        output = get_pane_turn_output(pane_id)
-        if output:
-            session_messages[tab_id] = [{
-                "id": f"msg_term_{tab_id}",
-                "sessionId": tab_id,
-                "sender": "AGENT",
-                "content": output,
-                "status": "SENT"
-            }]
         
     return {
         "type": "sessions_list",
@@ -252,7 +257,7 @@ def get_synced_sessions_payload():
         "count": len(sessions_list)
     }
 
-async def live_terminal_watcher(websocket, client_ip):
+async def live_terminal_watcher(websocket, client_ip, client_pane_streamed):
     last_tab_hash = ""
     last_focused_tab = ""
     
@@ -289,8 +294,8 @@ async def live_terminal_watcher(websocket, client_ip):
                     continue
                 
                 out_hash = hashlib.md5(turn_output.encode("utf-8")).hexdigest()
-                if pane_last_streamed.get(tab_id) != out_hash:
-                    pane_last_streamed[tab_id] = out_hash
+                if client_pane_streamed.get(tab_id) != out_hash:
+                    client_pane_streamed[tab_id] = out_hash
                     
                     await websocket.send(json.dumps({
                         "type": "stream_turn_update",
@@ -304,6 +309,7 @@ async def live_terminal_watcher(websocket, client_ip):
 async def handle_client(websocket):
     client_ip = websocket.remote_address
     print(f"[HerdrBridge] Client connected from {client_ip}")
+    client_pane_streamed = {}
     
     # 1. Send all sessions with their latest messages
     initial_payload = get_synced_sessions_payload()
@@ -311,22 +317,22 @@ async def handle_client(websocket):
     print(f"[HerdrBridge] Dispatched {len(sessions)} desktop tabs with content to client")
     await websocket.send(json.dumps(initial_payload))
     
-    # 2. Stream latest content for each tab
+    # 2. Stream latest content for each tab to this client
     for session in sessions:
         tab_id = session.get("id")
         pane_id = session.get("pane_id") or tab_id
         output = get_pane_turn_output(pane_id)
         if output:
-            pane_last_streamed[tab_id] = hashlib.md5(output.encode("utf-8")).hexdigest()
+            client_pane_streamed[tab_id] = hashlib.md5(output.encode("utf-8")).hexdigest()
             await websocket.send(json.dumps({
                 "type": "stream_turn_update",
                 "session_id": tab_id,
                 "content": output,
                 "is_complete": True
             }))
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.01)
     
-    watcher_task = asyncio.create_task(live_terminal_watcher(websocket, client_ip))
+    watcher_task = asyncio.create_task(live_terminal_watcher(websocket, client_ip, client_pane_streamed))
     
     try:
         async for message in websocket:

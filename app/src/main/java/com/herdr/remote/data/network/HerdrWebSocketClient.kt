@@ -196,6 +196,24 @@ class HerdrWebSocketClient(
                         }
 
                         val sessionMessagesMap = mutableMapOf<String, List<Message>>()
+
+                        // 1. Extract from top-level session_messages, sessionMessages, or messages map
+                        val topLevelMessagesObj = when {
+                            json.has("session_messages") && json.get("session_messages").isJsonObject -> json.getAsJsonObject("session_messages")
+                            json.has("sessionMessages") && json.get("sessionMessages").isJsonObject -> json.getAsJsonObject("sessionMessages")
+                            json.has("messages") && json.get("messages").isJsonObject -> json.getAsJsonObject("messages")
+                            else -> null
+                        }
+                        topLevelMessagesObj?.keySet()?.forEach { tabKey ->
+                            val child = topLevelMessagesObj.get(tabKey)
+                            if (child.isJsonArray) {
+                                val parsed = parseMessagesArray(child.asJsonArray, tabKey)
+                                if (parsed.isNotEmpty()) {
+                                    sessionMessagesMap[tabKey] = parsed
+                                }
+                            }
+                        }
+
                         val sessionsList = if (array != null) {
                             sessionMessagesMap.putAll(extractSessionMessagesMap(array))
                             parseSessionArray(array)
@@ -421,6 +439,22 @@ class HerdrWebSocketClient(
                 val msgs = extractMessagesFromSessionObject(obj, id)
                 if (msgs.isNotEmpty()) {
                     map[id] = msgs
+                } else {
+                    val rawOutput = obj.get("content")?.asString
+                        ?: obj.get("last_output")?.asString
+                        ?: obj.get("output")?.asString
+                        ?: obj.get("text")?.asString
+                    if (!rawOutput.isNullOrBlank()) {
+                        map[id] = listOf(
+                            Message(
+                                id = "msg_term_$id",
+                                sessionId = id,
+                                sender = MessageSender.AGENT,
+                                content = rawOutput,
+                                status = MessageStatus.SENT
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -458,7 +492,12 @@ class HerdrWebSocketClient(
             "system" -> MessageSender.SYSTEM
             else -> MessageSender.AGENT
         }
-        val content = obj.get("content")?.asString ?: obj.get("text")?.asString ?: obj.get("response")?.asString ?: return null
+        val content = obj.get("content")?.asString
+            ?: obj.get("text")?.asString
+            ?: obj.get("response")?.asString
+            ?: obj.get("last_output")?.asString
+            ?: obj.get("output")?.asString
+            ?: return null
         val thought = obj.get("thought")?.asString ?: obj.get("reasoning")?.asString
         val timestamp = obj.get("timestamp")?.asLong ?: obj.get("created_at")?.asLong ?: System.currentTimeMillis()
 

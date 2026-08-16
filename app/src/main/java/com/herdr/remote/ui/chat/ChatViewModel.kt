@@ -164,6 +164,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     is HerdrServerEvent.Connected -> {
                         sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.ONLINE, "Online • Herdr Node Ready")
                         wsClient.requestActiveSessions()
+                        wsClient.syncTabs()
                     }
                     is HerdrServerEvent.Disconnected -> {
                         sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.OFFLINE, "Offline • Disconnected")
