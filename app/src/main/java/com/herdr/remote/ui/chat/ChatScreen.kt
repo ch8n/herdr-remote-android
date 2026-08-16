@@ -231,7 +231,13 @@ fun ChatScreen(
                         onToggleAutoRephrase = { viewModel.toggleAutoRephrase() },
                         onOpenSettings = onOpenSettings,
                         onClearChat = { viewModel.clearChat() },
-                        onNewSession = { viewModel.createNewHerdrSession() }
+                        onNewSession = { viewModel.createNewHerdrSession() },
+                        onSyncTabs = {
+                            viewModel.syncTabsWithDesktop { count ->
+                                val msg = if (count > 0) "Synced $count tabs from Desktop" else "Connected to Herdr. Desktop tabs synced."
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
                 }
 
@@ -241,7 +247,13 @@ fun ChatScreen(
                     activeSessionId = activeSessionId,
                     onSelectSession = { viewModel.selectSession(it) },
                     onCloseSession = { viewModel.closeSession(it) },
-                    onNewSessionClick = { viewModel.createNewHerdrSession() }
+                    onNewSessionClick = { viewModel.createNewHerdrSession() },
+                    onSyncTabs = {
+                        viewModel.syncTabsWithDesktop { count ->
+                            val msg = if (count > 0) "Synced $count tabs from Desktop" else "Connected to Herdr. Desktop tabs synced."
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 )
 
                 // Message Thread

@@ -184,6 +184,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         sessionRepository.createSession(title, defaultProfile)
     }
 
+    fun syncTabsWithDesktop(onComplete: ((Int) -> Unit)? = null) {
+        val currentUrl = settings.value.herdrServerUrl
+        if (currentUrl.isNotBlank()) {
+            wsClient.requestActiveSessions()
+            viewModelScope.launch {
+                val result = herdrConnectionService.testConnection(currentUrl)
+                if (result.isSuccess && result.remoteSessions.isNotEmpty()) {
+                    sessionRepository.syncRemoteSessions(result.remoteSessions)
+                    onComplete?.invoke(result.remoteSessions.size)
+                } else {
+                    onComplete?.invoke(0)
+                }
+            }
+        } else {
+            onComplete?.invoke(0)
+        }
+    }
+
     fun closeSession(sessionId: String) {
         sessionRepository.closeSession(sessionId)
     }

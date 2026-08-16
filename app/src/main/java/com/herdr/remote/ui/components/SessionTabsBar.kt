@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,6 +50,7 @@ fun SessionTabsBar(
     onSelectSession: (String) -> Unit,
     onCloseSession: (String) -> Unit,
     onNewSessionClick: () -> Unit,
+    onSyncTabs: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -145,6 +147,26 @@ fun SessionTabsBar(
                     text = "New Tab",
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     color = TextPrimary
+                )
+            }
+        }
+
+        // "Sync Tabs" Button (if callback provided)
+        if (onSyncTabs != null) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SurfaceElevated)
+                    .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+                    .clickable { onSyncTabs() }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Sync Desktop Tabs",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

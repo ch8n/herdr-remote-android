@@ -71,6 +71,7 @@ fun TopAgentHeader(
     onOpenSettings: () -> Unit,
     onClearChat: () -> Unit,
     onNewSession: () -> Unit,
+    onSyncTabs: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -256,6 +257,15 @@ fun TopAgentHeader(
                         onDismissRequest = { showMenu = false },
                         modifier = Modifier.background(SurfaceElevated)
                     ) {
+                        if (onSyncTabs != null) {
+                            DropdownMenuItem(
+                                text = { Text("Sync Desktop Tabs", color = AccentCyan) },
+                                onClick = {
+                                    showMenu = false
+                                    onSyncTabs()
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("New Session Tab", color = TextPrimary) },
                             onClick = {
