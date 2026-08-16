@@ -489,7 +489,8 @@ fun ChatScreen(
                         .fillMaxWidth()
                         .background(SurfaceDark)
                         .border(1.dp, BorderSubtle, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
                     // Pending Attachments Preview Chips
                     if (pendingAttachments.isNotEmpty()) {
@@ -536,19 +537,22 @@ fun ChatScreen(
                         }
                     }
 
-                    // Main Input Controls Row
+                    // Main Input Controls Row with generous 8.dp spacing and margins
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // Attachment Plus Button
                         IconButton(
                             onClick = { viewModel.openAttachmentSheet() },
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(42.dp)
                                 .clip(CircleShape)
                                 .background(SurfaceElevated)
+                                .border(1.dp, BorderSubtle, CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
@@ -578,7 +582,7 @@ fun ChatScreen(
                                 focusedContainerColor = SurfaceInput,
                                 unfocusedContainerColor = SurfaceInput
                             ),
-                            shape = RoundedCornerShape(20.dp),
+                            shape = RoundedCornerShape(22.dp),
                             modifier = Modifier.weight(1f)
                         )
 
@@ -587,7 +591,7 @@ fun ChatScreen(
                             IconButton(
                                 onClick = { viewModel.triggerManualRephrase() },
                                 modifier = Modifier
-                                    .size(38.dp)
+                                    .size(42.dp)
                                     .clip(CircleShape)
                                     .background(AccentViolet.copy(alpha = 0.2f))
                                     .border(1.dp, AccentViolet.copy(alpha = 0.5f), CircleShape)
@@ -603,7 +607,7 @@ fun ChatScreen(
                                         imageVector = Icons.Default.AutoAwesome,
                                         contentDescription = "AI Polish Prompt",
                                         tint = AccentViolet,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(19.dp)
                                     )
                                 }
                             }
@@ -623,15 +627,16 @@ fun ChatScreen(
                                     }
                                 },
                                 modifier = Modifier
-                                    .size(38.dp)
+                                    .size(42.dp)
                                     .clip(CircleShape)
                                     .background(SurfaceElevated)
+                                    .border(1.dp, BorderSubtle, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Mic,
                                     contentDescription = "Voice Input",
                                     tint = AccentCyan,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(19.dp)
                                 )
                             }
                         }
@@ -649,7 +654,7 @@ fun ChatScreen(
                             },
                             enabled = canSend,
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(42.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (canSend) {
@@ -667,7 +672,7 @@ fun ChatScreen(
                                 imageVector = Icons.Default.Send,
                                 contentDescription = "Send",
                                 tint = if (canSend) Color.White else TextMuted,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(19.dp)
                             )
                         }
                     }
