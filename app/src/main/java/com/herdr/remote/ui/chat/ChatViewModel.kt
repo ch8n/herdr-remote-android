@@ -241,6 +241,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun syncTabsWithDesktop(onComplete: ((Int) -> Unit)? = null) {
         val currentUrl = settings.value.herdrServerUrl
         if (currentUrl.isNotBlank()) {
+            if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
+                wsClient.syncTabs()
+            }
             wsClient.requestActiveSessions()
             viewModelScope.launch {
                 val result = herdrConnectionService.testConnection(currentUrl)

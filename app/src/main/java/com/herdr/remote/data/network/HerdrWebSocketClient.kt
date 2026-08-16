@@ -472,5 +472,10 @@ class HerdrWebSocketClient(
             thought = thought
         )
     }
+
+    fun syncTabs() {
+        webSocket?.send("""{"type":"sync_tabs"}""")
+        webSocket?.send("""{"type":"get_sessions"}""")
+    }
 }
 

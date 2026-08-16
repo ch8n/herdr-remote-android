@@ -3,10 +3,10 @@
 Herdr Remote WebSocket Bridge & Real-Time Bi-Directional Workspace Sync Daemon
 Bridges ~/.config/herdr/herdr.sock to WebSocket on port 8765.
 
-Full-Fidelity Unwrapped Turn Streaming & Zero Truncation:
+Full-Fidelity Unwrapped Turn Streaming & Universal Tab Refresh:
+- Tab Refresh pulls latest content, agent outputs, and scrollback for ALL tabs simultaneously.
 - Uses unwrapped scrollback reader (`herdr pane read <pane> --lines 800 --source recent-unwrapped`).
-- Accurately captures and streams the complete full turn output without trimming.
-- Automatically isolates turns by prompt boundary markers.
+- Exact prompt boundary extraction prevents trimming.
 - Live real-time streaming to the active agent bubble.
 - Full bi-directional tab synchronization & exact 1-to-1 tab naming.
 """
@@ -57,7 +57,7 @@ def clean_terminal_buffer(raw_text):
     lines = []
     for line in text.splitlines():
         l = line.strip()
-        # Filter out UI chrome and interactive footers
+        # Filter out interactive terminal chrome and footers
         if "esc to cancel" in l or "Tip: " in l or "Loading..." in l or "Running..." in l:
             continue
         if l.startswith("● [") and "running" in l:
@@ -88,7 +88,6 @@ def get_pane_turn_output(pane_id):
     
     last_prompt = pane_turn_prompts.get(pane_id, "").strip()
     if last_prompt:
-        # 1. Exact prompt boundary extraction
         prompt_snippet = last_prompt[:35]
         marker = f"> {prompt_snippet}"
         pos = full_output.rfind(marker)
@@ -96,7 +95,6 @@ def get_pane_turn_output(pane_id):
             end_line = full_output.find("\n", pos)
             if end_line != -1:
                 turn_text = full_output[end_line + 1:]
-                # If there's a subsequent prompt marker, trim up to it
                 next_prompt = turn_text.find("\n> ")
                 if next_prompt != -1:
                     turn_text = turn_text[:next_prompt]
@@ -104,13 +102,11 @@ def get_pane_turn_output(pane_id):
             else:
                 return full_output[pos + len(marker):].strip("\n")
                 
-    # 2. Baseline fallback
     baseline = pane_turn_baselines.get(pane_id)
     if baseline and full_output.startswith(baseline):
         turn_delta = full_output[len(baseline):].strip("\n")
         return turn_delta
     
-    # 3. Buffer fallback: return full output
     return full_output.strip("\n")
 
 def submit_prompt_to_pane(pane_id, prompt_text):
@@ -167,6 +163,7 @@ def get_synced_sessions_payload():
     focused_tab_id = snapshot.get("focused_tab_id", "")
     
     sessions_list = []
+    session_messages = {}
     
     for tab in tabs:
         tab_id = tab.get("tab_id", "")
@@ -209,10 +206,22 @@ def get_synced_sessions_payload():
             "model": "herdr/desktop"
         })
         
+        output = get_pane_turn_output(pane_id)
+        if output:
+            session_messages[tab_id] = [{
+                "id": f"msg_term_{tab_id}",
+                "sessionId": tab_id,
+                "sender": "AGENT",
+                "content": output,
+                "status": "SENT"
+            }]
+        
     return {
         "type": "sessions_list",
         "sessions": sessions_list,
         "active_sessions": sessions_list,
+        "session_messages": session_messages,
+        "sessionMessages": session_messages,
         "focused_tab_id": focused_tab_id,
         "count": len(sessions_list)
     }
@@ -270,11 +279,13 @@ async def handle_client(websocket):
     client_ip = websocket.remote_address
     print(f"[HerdrBridge] Client connected from {client_ip}")
     
+    # 1. Send all sessions with their latest messages
     initial_payload = get_synced_sessions_payload()
     sessions = initial_payload.get("sessions", [])
-    print(f"[HerdrBridge] Dispatched {len(sessions)} desktop tabs to client")
+    print(f"[HerdrBridge] Dispatched {len(sessions)} desktop tabs with content to client")
     await websocket.send(json.dumps(initial_payload))
     
+    # 2. Stream latest content for each tab
     for session in sessions:
         tab_id = session.get("id")
         pane_id = session.get("pane_id") or tab_id
@@ -297,9 +308,23 @@ async def handle_client(websocket):
                 data = json.loads(message)
                 msg_type = data.get("type", "") or data.get("action", "")
                 
-                if msg_type in ("get_sessions", "list_sessions", "sync_tabs", "get_tabs", "client_hello"):
+                # Tab sync / refresh pulls latest content across all tabs
+                if msg_type in ("get_sessions", "list_sessions", "sync_tabs", "get_tabs", "refresh_tabs", "client_hello"):
+                    print("[HerdrBridge] Tab refresh requested - broadcasting all tabs with latest content...")
                     payload = get_synced_sessions_payload()
                     await websocket.send(json.dumps(payload))
+                    for session in payload.get("sessions", []):
+                        tab_id = session.get("id")
+                        pane_id = session.get("pane_id") or tab_id
+                        out = get_pane_turn_output(pane_id)
+                        if out:
+                            await websocket.send(json.dumps({
+                                "type": "stream_turn_update",
+                                "session_id": tab_id,
+                                "content": out,
+                                "is_complete": True
+                            }))
+                            await asyncio.sleep(0.01)
                 
                 elif msg_type in ("select_tab", "focus_tab", "switch_tab"):
                     target_id = data.get("tab_id") or data.get("session_id") or ""
@@ -351,6 +376,21 @@ async def handle_client(websocket):
                         payload = get_synced_sessions_payload()
                         await websocket.send(json.dumps(payload))
                 
+                elif msg_type in ("get_tab_content", "get_history", "request_history"):
+                    target_id = data.get("session_id") or data.get("tab_id") or ""
+                    payload = get_synced_sessions_payload()
+                    session = next((s for s in payload.get("sessions", []) if s.get("id") == target_id), {})
+                    pane_id = session.get("pane_id") or target_id
+                    if pane_id:
+                        output = get_pane_turn_output(pane_id)
+                        if output:
+                            await websocket.send(json.dumps({
+                                "type": "stream_turn_update",
+                                "session_id": target_id,
+                                "content": output,
+                                "is_complete": True
+                            }))
+                
                 elif msg_type == "user_message":
                     session_id = data.get("session_id", "")
                     content = data.get("content", "")
@@ -359,13 +399,11 @@ async def handle_client(websocket):
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == session_id), {})
                     pane_id = session.get("pane_id") or session_id
                     
-                    # 1. Record user prompt boundary and terminal baseline
                     pane_turn_prompts[pane_id] = content
                     current_term = read_pane_terminal(pane_id, lines=800)
                     pane_turn_baselines[pane_id] = current_term
                     pane_last_streamed[session_id] = ""
                     
-                    # 2. Notify client that agent is processing
                     await websocket.send(json.dumps({
                         "type": "agent_status",
                         "session_id": session_id,
@@ -373,7 +411,6 @@ async def handle_client(websocket):
                         "detail": "Running prompt..."
                     }))
                     
-                    # 3. Dispatch prompt to pane
                     submit_prompt_to_pane(pane_id, content)
             except Exception as e:
                 print(f"[HerdrBridge] Error processing message: {e}")
