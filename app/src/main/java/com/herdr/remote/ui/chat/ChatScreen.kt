@@ -488,47 +488,47 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(SurfaceDark)
-                        .border(1.dp, BorderSubtle, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        .border(1.dp, BorderSubtle, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                         .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     // Pending Attachments Preview Chips
                     if (pendingAttachments.isNotEmpty()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp),
+                                .padding(bottom = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             pendingAttachments.forEach { attachment ->
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(10.dp))
                                         .background(SurfaceElevated)
-                                        .border(1.dp, BorderHighlight, RoundedCornerShape(8.dp))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .border(1.dp, BorderHighlight, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             imageVector = if (attachment.type == AttachmentType.IMAGE) Icons.Default.Image else Icons.Default.PictureAsPdf,
                                             contentDescription = null,
                                             tint = if (attachment.type == AttachmentType.IMAGE) AccentCyan else AccentRose,
-                                            modifier = Modifier.size(14.dp)
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = attachment.name.take(16),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = TextPrimary
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Icon(
                                             imageVector = Icons.Default.Close,
                                             contentDescription = "Remove",
                                             tint = TextMuted,
                                             modifier = Modifier
-                                                .size(14.dp)
+                                                .size(15.dp)
                                                 .clickable { viewModel.removeAttachment(attachment.id) }
                                         )
                                     }
@@ -537,32 +537,13 @@ fun ChatScreen(
                         }
                     }
 
-                    // Main Input Controls Row with generous spacing and margins between all buttons
+                    // Main Input Controls Row with generous 10.dp spacing
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Attachment Plus Button
-                        IconButton(
-                            onClick = { viewModel.openAttachmentSheet() },
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(SurfaceElevated)
-                                .border(1.dp, BorderSubtle, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Add Attachment",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Text Field
+                        // Text Field Capsule with integrated leading Attachment button and trailing AI Polish button
                         OutlinedTextField(
                             value = inputText,
                             onValueChange = { viewModel.setInputText(it) },
@@ -573,6 +554,42 @@ fun ChatScreen(
                                     fontSize = 14.sp
                                 )
                             },
+                            leadingIcon = {
+                                IconButton(
+                                    onClick = { viewModel.openAttachmentSheet() },
+                                    modifier = Modifier.padding(start = 4.dp).size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AttachFile,
+                                        contentDescription = "Add Attachment",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            },
+                            trailingIcon = if (inputText.isNotBlank()) {
+                                {
+                                    IconButton(
+                                        onClick = { viewModel.triggerManualRephrase() },
+                                        modifier = Modifier.padding(end = 4.dp).size(36.dp)
+                                    ) {
+                                        if (isRephrasing) {
+                                            CircularProgressIndicator(
+                                                strokeWidth = 2.dp,
+                                                color = AccentViolet,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.AutoAwesome,
+                                                contentDescription = "AI Polish Prompt",
+                                                tint = AccentViolet,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else null,
                             maxLines = 4,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = TextPrimary,
@@ -582,37 +599,39 @@ fun ChatScreen(
                                 focusedContainerColor = SurfaceInput,
                                 unfocusedContainerColor = SurfaceInput
                             ),
-                            shape = RoundedCornerShape(22.dp),
+                            shape = RoundedCornerShape(26.dp),
                             modifier = Modifier.weight(1f)
                         )
 
-                        // Magic Wand AI Rephrase Button (if input has text)
-                        if (inputText.isNotBlank()) {
+                        // Action Button (Send if text exists, Mic if empty)
+                        val canSend = inputText.isNotBlank() || pendingAttachments.isNotEmpty()
+                        if (canSend) {
                             IconButton(
-                                onClick = { viewModel.triggerManualRephrase() },
+                                onClick = {
+                                    viewModel.sendUserMessage()
+                                    scope.launch {
+                                        if (messages.isNotEmpty()) {
+                                            listState.animateScrollToItem(messages.size - 1)
+                                        }
+                                    }
+                                },
                                 modifier = Modifier
-                                    .size(42.dp)
+                                    .size(46.dp)
                                     .clip(CircleShape)
-                                    .background(AccentViolet.copy(alpha = 0.2f))
-                                    .border(1.dp, AccentViolet.copy(alpha = 0.5f), CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(AccentPrimary, AccentCyan)
+                                        )
+                                    )
                             ) {
-                                if (isRephrasing) {
-                                    CircularProgressIndicator(
-                                        strokeWidth = 2.dp,
-                                        color = AccentViolet,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = "AI Polish Prompt",
-                                        tint = AccentViolet,
-                                        modifier = Modifier.size(19.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "Send",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         } else {
-                            // Speech Mic Button (when input is empty)
                             IconButton(
                                 onClick = {
                                     val hasAudioPermission = ContextCompat.checkSelfPermission(
@@ -627,7 +646,7 @@ fun ChatScreen(
                                     }
                                 },
                                 modifier = Modifier
-                                    .size(42.dp)
+                                    .size(46.dp)
                                     .clip(CircleShape)
                                     .background(SurfaceElevated)
                                     .border(1.dp, BorderSubtle, CircleShape)
@@ -636,44 +655,9 @@ fun ChatScreen(
                                     imageVector = Icons.Default.Mic,
                                     contentDescription = "Voice Input",
                                     tint = AccentCyan,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                        }
-
-                        // Send Button
-                        val canSend = inputText.isNotBlank() || pendingAttachments.isNotEmpty()
-                        IconButton(
-                            onClick = {
-                                viewModel.sendUserMessage()
-                                scope.launch {
-                                    if (messages.isNotEmpty()) {
-                                        listState.animateScrollToItem(messages.size - 1)
-                                    }
-                                }
-                            },
-                            enabled = canSend,
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (canSend) {
-                                        Brush.linearGradient(
-                                            colors = listOf(AccentPrimary, AccentCyan)
-                                        )
-                                    } else {
-                                        Brush.linearGradient(
-                                            colors = listOf(SurfaceElevated, SurfaceElevated)
-                                        )
-                                    }
-                                )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "Send",
-                                tint = if (canSend) Color.White else TextMuted,
-                                modifier = Modifier.size(19.dp)
-                            )
                         }
                     }
                 }
