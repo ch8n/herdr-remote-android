@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Herdr Remote</string>
+    <string name="session_default_title">Agent Workspace</string>
+</resources>

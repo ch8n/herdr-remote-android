@@ -1,0 +1,781 @@
+package com.herdr.remote.ui.components
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.herdr.remote.data.model.AgentProfile
+import com.herdr.remote.data.model.Attachment
+import com.herdr.remote.data.model.AttachmentType
+import com.herdr.remote.data.model.Message
+import com.herdr.remote.data.model.MessageSender
+import com.herdr.remote.data.model.MessageStatus
+import com.herdr.remote.data.model.ToolExecution
+import com.herdr.remote.data.model.ToolStatus
+import com.herdr.remote.ui.theme.AccentCyan
+import com.herdr.remote.ui.theme.AccentEmerald
+import com.herdr.remote.ui.theme.AccentPrimary
+import com.herdr.remote.ui.theme.AccentRose
+import com.herdr.remote.ui.theme.AccentViolet
+import com.herdr.remote.ui.theme.BorderHighlight
+import com.herdr.remote.ui.theme.BorderSubtle
+import com.herdr.remote.ui.theme.BubbleAgent
+import com.herdr.remote.ui.theme.BubbleAgentBorder
+import com.herdr.remote.ui.theme.BubbleUser
+import com.herdr.remote.ui.theme.BubbleUserBorder
+import com.herdr.remote.ui.theme.CodeBackground
+import com.herdr.remote.ui.theme.CodeBorder
+import com.herdr.remote.ui.theme.SurfaceCard
+import com.herdr.remote.ui.theme.SurfaceElevated
+import com.herdr.remote.ui.theme.TextHighlight
+import com.herdr.remote.ui.theme.TextMuted
+import com.herdr.remote.ui.theme.TextPrimary
+import com.herdr.remote.ui.theme.TextSecondary
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@Composable
+fun ChatBubble(
+    message: Message,
+    agentProfile: AgentProfile,
+    onImageClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isUser = message.sender == MessageSender.USER
+    val isSystem = message.sender == MessageSender.SYSTEM
+    val context = LocalContext.current
+
+    val timeString = remember(message.timestamp) {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        sdf.format(Date(message.timestamp))
+    }
+
+    if (isSystem) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SurfaceElevated)
+                    .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        }
+        return
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        if (!isUser) {
+            // Agent Avatar next to bubble
+            Box(
+                modifier = Modifier
+                    .padding(end = 8.dp, top = 4.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(SurfaceElevated)
+                    .border(1.dp, BorderSubtle, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = agentProfile.avatarEmoji, fontSize = 16.sp)
+            }
+        }
+
+        Column(
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+            modifier = Modifier.widthIn(max = 340.dp)
+        ) {
+            // Main Bubble Container
+            Box(
+                modifier = Modifier
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomStart = if (isUser) 16.dp else 4.dp,
+                            bottomEnd = if (isUser) 4.dp else 16.dp
+                        )
+                    )
+                    .background(
+                        if (isUser) {
+                            Brush.linearGradient(
+                                colors = listOf(BubbleUser, Color(0xFF3730A3))
+                            )
+                        } else {
+                            Brush.linearGradient(
+                                colors = listOf(BubbleAgent, Color(0xFF131B2E))
+                            )
+                        }
+                    )
+                    .border(
+                        1.dp,
+                        if (isUser) BubbleUserBorder else BubbleAgentBorder,
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomStart = if (isUser) 16.dp else 4.dp,
+                            bottomEnd = if (isUser) 4.dp else 16.dp
+                        )
+                    )
+                    .padding(12.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Agent Name on Top of Bubble (if Agent message)
+                    if (!isUser) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = agentProfile.name,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = AccentCyan
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Agent Response", message.content)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copied response to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Attachments Rendering (if any)
+                    if (message.attachments.isNotEmpty()) {
+                        message.attachments.forEach { attachment ->
+                            AttachmentBubbleItem(
+                                attachment = attachment,
+                                onImageClick = onImageClick
+                            )
+                        }
+                    }
+
+                    // Spoken voice transcript badge if original text was rephrased
+                    if (isUser && !message.originalSpokenText.isNullOrBlank() && message.originalSpokenText != message.content) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF312E81))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "AI Rephrased",
+                                    tint = AccentViolet,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "AI Refined Prompt",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFDDD6FE)
+                                )
+                            }
+                        }
+                    }
+
+                    // Agent Monologue / Thought Section (if present)
+                    if (!message.thought.isNullOrBlank()) {
+                        AgentThoughtCard(thought = message.thought)
+                    }
+
+                    // Agent Tool Executions (if present)
+                    if (message.toolExecutions.isNotEmpty()) {
+                        message.toolExecutions.forEach { tool ->
+                            ToolExecutionCard(tool = tool)
+                        }
+                    }
+
+                    // Main Text Content with Markdown formatting
+                    if (message.content.isNotBlank()) {
+                        MarkdownMessageText(
+                            text = message.content,
+                            isStreaming = message.status == MessageStatus.STREAMING
+                        )
+                    }
+
+                    // Timestamp & Status Ticks
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = timeString,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isUser) Color(0xFFC7D2FE) else TextMuted
+                        )
+
+                        if (isUser) {
+                            when (message.status) {
+                                MessageStatus.SENDING -> {
+                                    CircularProgressIndicator(
+                                        strokeWidth = 1.5.dp,
+                                        color = Color.White,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                                MessageStatus.SENT -> {
+                                    Icon(
+                                        imageVector = Icons.Default.DoneAll,
+                                        contentDescription = "Delivered",
+                                        tint = AccentCyan,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                MessageStatus.ERROR -> {
+                                    Text(
+                                        text = "!",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = AccentRose,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AttachmentBubbleItem(
+    attachment: Attachment,
+    onImageClick: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    when (attachment.type) {
+        AttachmentType.IMAGE -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.Black)
+                    .border(1.dp, BorderSubtle, RoundedCornerShape(10.dp))
+                    .clickable { onImageClick(attachment.uriString) }
+            ) {
+                AsyncImage(
+                    model = attachment.uriString,
+                    contentDescription = attachment.name,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+        AttachmentType.PDF -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(SurfaceElevated)
+                    .border(1.dp, BorderHighlight, RoundedCornerShape(10.dp))
+                    .clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(Uri.parse(attachment.uriString), "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "No PDF viewer app found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .padding(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(AccentRose.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureAsPdf,
+                            contentDescription = "PDF",
+                            tint = AccentRose,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = attachment.name,
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = TextPrimary,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "PDF Document • Tap to open",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+        }
+        else -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceElevated)
+                    .padding(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.FolderZip,
+                        contentDescription = "File",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = attachment.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextPrimary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AgentThoughtCard(thought: String) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(8.dp))
+            .clickable { expanded = !expanded }
+            .padding(8.dp)
+    ) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Psychology,
+                        contentDescription = "Reasoning",
+                        tint = AccentViolet,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Reasoning Process",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = AccentViolet
+                    )
+                }
+
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = "Toggle Thought",
+                    tint = TextMuted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Text(
+                    text = thought,
+                    style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                    color = TextSecondary,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ToolExecutionCard(tool: ToolExecution) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(CodeBackground)
+            .border(1.dp, CodeBorder, RoundedCornerShape(8.dp))
+            .clickable { expanded = !expanded }
+            .padding(8.dp)
+    ) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Terminal,
+                        contentDescription = "Tool",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = tool.toolName,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = AccentCyan
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (tool.status == ToolStatus.RUNNING) {
+                        CircularProgressIndicator(
+                            strokeWidth = 1.5.dp,
+                            color = AccentCyan,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    } else if (tool.status == ToolStatus.REQUIRES_APPROVAL) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(AccentRose.copy(alpha = 0.2f))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "APPROVAL NEEDED",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = AccentRose
+                            )
+                        }
+                    } else if (tool.status == ToolStatus.REJECTED) {
+                        Text(
+                            text = "Denied",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = AccentRose
+                        )
+                    } else {
+                        Text(
+                            text = "${tool.durationMs}ms",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AccentEmerald
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = "Details",
+                        tint = TextMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            // Inline Approval Buttons if pending permission
+            if (tool.status == ToolStatus.REQUIRES_APPROVAL) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = {
+                            com.herdr.remote.HerdrApplication.instance.handlePermissionDecision(
+                                sessionId = tool.id,
+                                toolId = tool.id,
+                                approved = true
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Text(
+                            text = "✅ Approve",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            com.herdr.remote.HerdrApplication.instance.handlePermissionDecision(
+                                sessionId = tool.id,
+                                toolId = tool.id,
+                                approved = false
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Text(
+                            text = "❌ Deny",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = expanded || tool.status == ToolStatus.REQUIRES_APPROVAL) {
+                Column(modifier = Modifier.padding(top = 6.dp)) {
+                    Text(
+                        text = "Args: ${tool.argumentsJson}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = TextSecondary
+                    )
+                    if (!tool.resultJson.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Result: ${tool.resultJson}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = if (tool.status == ToolStatus.REJECTED) AccentRose else AccentEmerald
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MarkdownMessageText(
+    text: String,
+    isStreaming: Boolean
+) {
+    val context = LocalContext.current
+    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
+    val cursorAlpha by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cursorAlpha"
+    )
+
+    // Parse simple code blocks and regular paragraphs
+    val parts = remember(text) {
+        val list = mutableListOf<String>()
+        val lines = text.split("\n")
+        var inCodeBlock = false
+        var currentBlock = StringBuilder()
+
+        for (line in lines) {
+            if (line.startsWith("```")) {
+                if (inCodeBlock) {
+                    currentBlock.append(line)
+                    list.add(currentBlock.toString())
+                    currentBlock = StringBuilder()
+                    inCodeBlock = false
+                } else {
+                    if (currentBlock.isNotEmpty()) {
+                        list.add(currentBlock.toString())
+                        currentBlock = StringBuilder()
+                    }
+                    currentBlock.append(line).append("\n")
+                    inCodeBlock = true
+                }
+            } else {
+                currentBlock.append(line).append("\n")
+            }
+        }
+        if (currentBlock.isNotEmpty()) {
+            list.add(currentBlock.toString())
+        }
+        list
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        parts.forEach { part ->
+            if (part.startsWith("```")) {
+                // Code Block Container
+                val codeContent = part
+                    .substringAfter("\n")
+                    .substringBeforeLast("```")
+                    .trimEnd()
+
+                val language = part.lines().firstOrNull()?.removePrefix("```")?.trim() ?: "code"
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(CodeBackground)
+                        .border(1.dp, CodeBorder, RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = language.ifBlank { "code" },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted
+                            )
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Code", codeContent)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(18.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy code",
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = codeContent,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.5.sp,
+                                lineHeight = 19.sp
+                            ),
+                            color = TextHighlight
+                        )
+                    }
+                }
+            } else {
+                // Regular Text
+                Text(
+                    text = part.trimEnd(),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 24.sp),
+                    color = TextPrimary
+                )
+            }
+        }
+
+        if (isStreaming) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp, 16.dp)
+                    .background(AccentViolet.copy(alpha = cursorAlpha))
+            )
+        }
+    }
+}
