@@ -386,40 +386,45 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Message Sending & Agent Dispatch
-    fun sendUserMessage(content: String? = null, originalSpoken: String? = null) {
-        val textToSend = (content ?: _inputText.value).trim()
+    fun sendUserMessage(content: String = _inputText.value, originalSpoken: String? = null) {
+        val trimmed = content.trim()
         val attachmentsToSend = _pendingAttachments.value.toList()
 
-        if (textToSend.isEmpty() && attachmentsToSend.isEmpty()) return
+        if (trimmed.isEmpty() && attachmentsToSend.isEmpty()) return
 
-        val targetSessionId = activeSessionId.value.ifBlank {
-            activeSession.value?.id ?: sessions.value.firstOrNull()?.id ?: "default_cluster"
-        }
-        val targetSession = sessions.value.find { it.id == targetSessionId }
-            ?: activeSession.value
-            ?: sessions.value.firstOrNull()
+        val currentSession = activeSession.value ?: return
 
+        // 1. Spawn User Chat Bubble
         val userMessage = Message(
             id = java.util.UUID.randomUUID().toString(),
-            sessionId = targetSessionId,
+            sessionId = currentSession.id,
             sender = MessageSender.USER,
-            content = textToSend,
+            content = trimmed,
             attachments = attachmentsToSend,
             originalSpokenText = originalSpoken,
             status = MessageStatus.SENT
         )
-
         sessionRepository.addMessage(userMessage)
 
-        // Clear input and attachments
+        // 2. Clear input and attachments
         _inputText.value = ""
         _pendingAttachments.value = emptyList()
 
-        // Dispatch directly to connected Herdr cluster if online, otherwise to simulator
+        // 3. Immediately spawn a new Agent Response Bubble for this turn
+        val pendingAgentMessage = Message(
+            id = java.util.UUID.randomUUID().toString(),
+            sessionId = currentSession.id,
+            sender = MessageSender.AGENT,
+            content = "⏳ *Executing prompt in ${currentSession.title}...*",
+            status = MessageStatus.STREAMING
+        )
+        sessionRepository.addMessage(pendingAgentMessage)
+
+        // 4. Dispatch directly to connected Herdr cluster if online, otherwise to simulator
         if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
-            wsClient.sendMessage(targetSessionId, textToSend, attachmentsToSend)
-        } else if (targetSession != null) {
-            dispatchToSimulator(targetSession, userMessage)
+            wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
+        } else {
+            dispatchToSimulator(currentSession, userMessage)
         }
     }
 
