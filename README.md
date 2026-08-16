@@ -4,7 +4,13 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Tailscale](https://img.shields.io/badge/Network-Tailscale%20WireGuard-202A36?logo=tailscale&logoColor=white)](https://tailscale.com)
+[![Latest Release](https://img.shields.io/github/v/release/ch8n/herdr-remote-android?color=7F52FF&label=Latest%20Release)](https://github.com/ch8n/herdr-remote-android/releases/latest)
+[![Download APK](https://img.shields.io/badge/Download-APK-3DDC84?logo=android&logoColor=white)](https://github.com/ch8n/herdr-remote-android/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> 📲 **Download APK from here**: 👉 [**Get Latest Android APKs (Release & Debug)**](https://github.com/ch8n/herdr-remote-android/releases/latest) 👈
+>
+> Pre-built binaries are ready to install directly on your Android device (Android 8.0+ / API 26+).
 
 An impeccable, modern Android client for **Herdr** autonomous agent cluster interfacing. Designed with a fluid Telegram-inspired chat UX, multi-session agent tabs, real-time voice rephrasing via OpenRouter AI, Tailscale private node connectivity, and actionable system notifications with inline direct reply.
 
