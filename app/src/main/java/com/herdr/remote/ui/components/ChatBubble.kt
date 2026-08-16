@@ -383,6 +383,25 @@ fun ChatBubble(
                 }
             }
         }
+
+        if (isUser) {
+            // User Avatar next to user bubble
+            Box(
+                modifier = Modifier
+                    .padding(start = 8.dp, top = 4.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(BubbleUser, Color(0xFF3730A3))
+                        )
+                    )
+                    .border(1.dp, BubbleUserBorder, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "👤", fontSize = 16.sp)
+            }
+        }
     }
 }
 
