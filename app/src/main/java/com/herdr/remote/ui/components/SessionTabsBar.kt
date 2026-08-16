@@ -88,15 +88,18 @@ fun SessionTabsBar(
                 label = "tabBorder"
             )
 
-            Box(
+            Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(bgCol)
-                    .border(1.dp, borderCol, RoundedCornerShape(12.dp))
-                    .clickable { onSelectSession(session.id) }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .border(1.dp, borderCol, RoundedCornerShape(12.dp)),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // Tab Selection Area (Emoji + Title)
                 Row(
+                    modifier = Modifier
+                        .clickable { onSelectSession(session.id) }
+                        .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = if (sessions.size > 1) 4.dp else 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -114,22 +117,24 @@ fun SessionTabsBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
 
-                    if (sessions.size > 1) {
-                        Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .clickable { onCloseSession(session.id) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close Tab",
-                                tint = if (isActive) TextPrimary.copy(alpha = 0.7f) else TextMuted,
-                                modifier = Modifier.size(12.dp)
-                            )
-                        }
+                // Dedicated Close Button
+                if (sessions.size > 1) {
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .clickable { onCloseSession(session.id) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Tab",
+                            tint = if (isActive) TextPrimary.copy(alpha = 0.8f) else TextMuted,
+                            modifier = Modifier.size(13.dp)
+                        )
                     }
                 }
             }
