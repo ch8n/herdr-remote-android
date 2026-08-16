@@ -55,6 +55,8 @@ def clean_terminal_buffer(raw_text):
     text = ansi_escape.sub('', raw_text)
     
     lines = []
+    prev_was_divider = False
+    
     for line in text.splitlines():
         l = line.strip()
         # Filter out interactive terminal chrome and footers
@@ -62,7 +64,16 @@ def clean_terminal_buffer(raw_text):
             continue
         if l.startswith("● [") and "running" in l:
             continue
-        lines.append(line)
+        
+        # Collapse and shorten horizontal rule lines / box drawing dividers
+        is_divider = bool(l) and (all(c in '─━═-_~=─ ' for c in l) and len(l) >= 3)
+        if is_divider:
+            if not prev_was_divider:
+                lines.append("───")
+                prev_was_divider = True
+        else:
+            prev_was_divider = False
+            lines.append(line)
         
     return "\n".join(lines)
 

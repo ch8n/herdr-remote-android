@@ -709,14 +709,36 @@ sealed class ContentBlock {
     data class CodeBlock(val language: String, val code: String) : ContentBlock()
 }
 
+fun cleanDividerLines(text: String): String {
+    val lines = text.lines()
+    val cleaned = mutableListOf<String>()
+    var prevWasDivider = false
+
+    for (line in lines) {
+        val trimmed = line.trim()
+        val isDivider = trimmed.length >= 3 && trimmed.all { it == '─' || it == '━' || it == '═' || it == '-' || it == '_' || it == '=' || it == '~' || it == ' ' }
+        if (isDivider) {
+            if (!prevWasDivider) {
+                cleaned.add("───")
+                prevWasDivider = true
+            }
+        } else {
+            prevWasDivider = false
+            cleaned.add(line)
+        }
+    }
+    return cleaned.joinToString("\n")
+}
+
 fun parseContentBlocks(rawText: String): List<ContentBlock> {
+    val sanitized = cleanDividerLines(rawText)
     val blocks = mutableListOf<ContentBlock>()
     val codeFenceRegex = Regex("```([a-zA-Z0-9_-]*)\\n?([\\s\\S]*?)```", RegexOption.MULTILINE)
     var lastIndex = 0
 
-    val matches = codeFenceRegex.findAll(rawText).toList()
+    val matches = codeFenceRegex.findAll(sanitized).toList()
     if (matches.isEmpty()) {
-        return listOf(ContentBlock.TextBlock(rawText))
+        return listOf(ContentBlock.TextBlock(sanitized))
     }
 
     for (match in matches) {
@@ -724,7 +746,7 @@ fun parseContentBlocks(rawText: String): List<ContentBlock> {
         val matchEnd = match.range.last + 1
 
         if (matchStart > lastIndex) {
-            val textPart = rawText.substring(lastIndex, matchStart).trim()
+            val textPart = sanitized.substring(lastIndex, matchStart).trim()
             if (textPart.isNotEmpty()) {
                 blocks.add(ContentBlock.TextBlock(textPart))
             }
@@ -736,8 +758,8 @@ fun parseContentBlocks(rawText: String): List<ContentBlock> {
         lastIndex = matchEnd
     }
 
-    if (lastIndex < rawText.length) {
-        val remaining = rawText.substring(lastIndex).trim()
+    if (lastIndex < sanitized.length) {
+        val remaining = sanitized.substring(lastIndex).trim()
         if (remaining.isNotEmpty()) {
             blocks.add(ContentBlock.TextBlock(remaining))
         }
