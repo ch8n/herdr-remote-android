@@ -3,12 +3,12 @@
 Herdr Remote WebSocket Bridge & Real-Time Bi-Directional Workspace Sync Daemon
 Bridges ~/.config/herdr/herdr.sock to WebSocket on port 8765.
 
-Full Bi-Directional Tab Synchronization:
-- Tab Creation: Tap '+ New Tab' on Android -> runs 'herdr tab create --focus' on desktop -> syncs to both.
-- Tab Closing: Tap 'x' on tab in Android -> resolves tab_id and executes 'herdr tab close <tab_id>' on desktop -> syncs to both.
-- Tab Switching: Select tab on Android -> runs 'herdr tab focus <id>' on desktop.
-- Desktop Tab Switching: Focus tab on desktop -> detects focused_tab_id -> switches tab on Android.
-- Real-Time Terminal Streaming & Clean Markdown Formatting.
+Real-Time Output Streaming & Queued Turn Isolation:
+- When a user sends a message, a snapshot baseline of the terminal is captured immediately.
+- The new agent chat bubble appears instantly in 'Processing/Streaming' state.
+- Output produced in the terminal streams LIVE into the new agent chat bubble in real time.
+- Turn history from previous turns is preserved without pollution or duplication.
+- Full bi-directional tab synchronization & exact 1-to-1 tab naming.
 """
 
 import asyncio
@@ -26,6 +26,7 @@ HERDR_SOCK_PATH = os.path.expanduser("~/.config/herdr/herdr.sock")
 WS_PORT = 8765
 
 pane_turn_baselines = {}
+pane_last_streamed = {}
 
 def query_herdr_socket(method, params=None):
     if params is None:
@@ -95,7 +96,7 @@ def get_pane_turn_output(pane_id):
     
     if baseline and full_output.startswith(baseline):
         turn_delta = full_output[len(baseline):].strip("\n")
-        return turn_delta if turn_delta else "..."
+        return turn_delta
     
     base_lines = baseline.splitlines()
     curr_lines = full_output.splitlines()
@@ -103,7 +104,7 @@ def get_pane_turn_output(pane_id):
     if len(curr_lines) >= len(base_lines) and curr_lines[:len(base_lines)] == base_lines:
         delta_lines = curr_lines[len(base_lines):]
         turn_delta = "\n".join(delta_lines).strip()
-        return turn_delta if turn_delta else "..."
+        return turn_delta
     
     return "\n".join(full_output.splitlines()[-35:])
 
@@ -214,23 +215,22 @@ def get_synced_sessions_payload():
 async def live_terminal_watcher(websocket, client_ip):
     last_tab_hash = ""
     last_focused_tab = ""
-    last_pane_hashes = {}
     
     try:
         while True:
-            await asyncio.sleep(0.35)
+            await asyncio.sleep(0.12)  # Fast 120ms real-time streaming loop
             
             payload = get_synced_sessions_payload()
             sessions = payload.get("sessions", [])
             tab_ids = ",".join(f"{s['id']}:{s['title']}" for s in sessions)
             focused_tab_id = payload.get("focused_tab_id", "")
             
-            # 1. Check if tabs or titles changed on desktop
+            # 1. Check tab structure / names
             if tab_ids != last_tab_hash:
                 last_tab_hash = tab_ids
                 await websocket.send(json.dumps(payload))
             
-            # 2. Check if active tab switched on desktop
+            # 2. Check tab focus changes
             if focused_tab_id and focused_tab_id != last_focused_tab:
                 last_focused_tab = focused_tab_id
                 await websocket.send(json.dumps({
@@ -239,25 +239,26 @@ async def live_terminal_watcher(websocket, client_ip):
                     "session_id": focused_tab_id
                 }))
             
-            # 3. Check each pane for output changes
+            # 3. Live real-time output streaming per tab
             for session in sessions:
                 tab_id = session.get("id")
                 pane_id = session.get("pane_id") or tab_id
                 
                 turn_output = get_pane_turn_output(pane_id)
-                if not turn_output:
+                if turn_output is None:
                     continue
                 
                 out_hash = hashlib.md5(turn_output.encode("utf-8")).hexdigest()
-                if last_pane_hashes.get(tab_id) != out_hash:
-                    last_pane_hashes[tab_id] = out_hash
+                if pane_last_streamed.get(tab_id) != out_hash:
+                    pane_last_streamed[tab_id] = out_hash
                     
-                    msg_payload = {
-                        "type": "message_complete",
+                    # Stream live turn output
+                    await websocket.send(json.dumps({
+                        "type": "stream_turn_update",
                         "session_id": tab_id,
-                        "content": turn_output
-                    }
-                    await websocket.send(json.dumps(msg_payload))
+                        "content": turn_output,
+                        "is_complete": False
+                    }))
     except (asyncio.CancelledError, websockets.exceptions.ConnectionClosed):
         pass
 
@@ -265,26 +266,25 @@ async def handle_client(websocket):
     client_ip = websocket.remote_address
     print(f"[HerdrBridge] Client connected from {client_ip}")
     
-    # 1. Send live sessions
     initial_payload = get_synced_sessions_payload()
     sessions = initial_payload.get("sessions", [])
     print(f"[HerdrBridge] Dispatched {len(sessions)} desktop tabs to client")
     await websocket.send(json.dumps(initial_payload))
     
-    # 2. Initial stream for all tabs
     for session in sessions:
         tab_id = session.get("id")
         pane_id = session.get("pane_id") or tab_id
         output = get_pane_turn_output(pane_id)
         if output:
+            pane_last_streamed[tab_id] = hashlib.md5(output.encode("utf-8")).hexdigest()
             await websocket.send(json.dumps({
-                "type": "message_complete",
+                "type": "stream_turn_update",
                 "session_id": tab_id,
-                "content": output
+                "content": output,
+                "is_complete": True
             }))
             await asyncio.sleep(0.02)
     
-    # 3. Start real-time background watcher task
     watcher_task = asyncio.create_task(live_terminal_watcher(websocket, client_ip))
     
     try:
@@ -300,7 +300,6 @@ async def handle_client(websocket):
                 elif msg_type in ("select_tab", "focus_tab", "switch_tab"):
                     target_id = data.get("tab_id") or data.get("session_id") or ""
                     if target_id:
-                        print(f"[HerdrBridge] Focusing tab on desktop: {target_id}")
                         subprocess.run(["/Users/chetan/.local/bin/herdr", "tab", "focus", target_id], capture_output=True, text=True, timeout=2.0)
                         
                         payload = get_synced_sessions_payload()
@@ -308,15 +307,16 @@ async def handle_client(websocket):
                         pane_id = session.get("pane_id") or target_id
                         output = get_pane_turn_output(pane_id)
                         if output:
+                            pane_last_streamed[target_id] = hashlib.md5(output.encode("utf-8")).hexdigest()
                             await websocket.send(json.dumps({
-                                "type": "message_complete",
+                                "type": "stream_turn_update",
                                 "session_id": target_id,
-                                "content": output
+                                "content": output,
+                                "is_complete": True
                             }))
                 
                 elif msg_type in ("create_tab", "new_tab", "add_tab"):
                     label = data.get("label") or data.get("title") or ""
-                    print(f"[HerdrBridge] Creating new tab on desktop (label: {label})...")
                     cmd = ["/Users/chetan/.local/bin/herdr", "tab", "create", "--focus"]
                     if label:
                         cmd.extend(["--label", label])
@@ -332,7 +332,6 @@ async def handle_client(websocket):
                         payload = get_synced_sessions_payload()
                         session = next((s for s in payload.get("sessions", []) if s.get("id") == target_id or s.get("pane_id") == target_id), {})
                         actual_tab_id = session.get("id") or target_id
-                        print(f"[HerdrBridge] Closing tab on desktop: {actual_tab_id}")
                         subprocess.run(["/Users/chetan/.local/bin/herdr", "tab", "close", actual_tab_id], capture_output=True, text=True, timeout=3.0)
                         
                         await asyncio.sleep(0.2)
@@ -348,20 +347,6 @@ async def handle_client(websocket):
                         payload = get_synced_sessions_payload()
                         await websocket.send(json.dumps(payload))
                 
-                elif msg_type in ("get_tab_content",):
-                    target_id = data.get("session_id") or data.get("tab_id") or ""
-                    payload = get_synced_sessions_payload()
-                    session = next((s for s in payload.get("sessions", []) if s.get("id") == target_id), {})
-                    pane_id = session.get("pane_id") or target_id
-                    if pane_id:
-                        output = get_pane_turn_output(pane_id)
-                        if output:
-                            await websocket.send(json.dumps({
-                                "type": "message_complete",
-                                "session_id": target_id,
-                                "content": output
-                            }))
-                
                 elif msg_type == "user_message":
                     session_id = data.get("session_id", "")
                     content = data.get("content", "")
@@ -370,19 +355,21 @@ async def handle_client(websocket):
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == session_id), {})
                     pane_id = session.get("pane_id") or session_id
                     
+                    # 1. Take snapshot of current terminal buffer as baseline for this new turn
                     current_term = read_pane_terminal(pane_id)
                     pane_turn_baselines[pane_id] = current_term
+                    pane_last_streamed[session_id] = ""
                     
-                    submit_prompt_to_pane(pane_id, content)
-                    await asyncio.sleep(0.4)
-                    
-                    new_turn_output = get_pane_turn_output(pane_id)
-                    
+                    # 2. Notify client that agent is processing
                     await websocket.send(json.dumps({
-                        "type": "message_complete",
+                        "type": "agent_status",
                         "session_id": session_id,
-                        "content": new_turn_output
+                        "status": "STREAMING",
+                        "detail": "Running prompt..."
                     }))
+                    
+                    # 3. Dispatch prompt to pane
+                    submit_prompt_to_pane(pane_id, content)
             except Exception as e:
                 print(f"[HerdrBridge] Error processing message: {e}")
     except websockets.exceptions.ConnectionClosed:

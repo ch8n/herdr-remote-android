@@ -36,6 +36,7 @@ sealed class HerdrServerEvent {
     data class TabFocused(val tabId: String) : HerdrServerEvent()
     data class TabClosed(val tabId: String) : HerdrServerEvent()
     data class StreamChunk(val sessionId: String, val chunk: String) : HerdrServerEvent()
+    data class StreamTurnUpdate(val sessionId: String, val content: String, val isComplete: Boolean) : HerdrServerEvent()
     data class MessageComplete(val message: Message) : HerdrServerEvent()
     data class ToolStarted(val sessionId: String, val toolExecution: ToolExecution) : HerdrServerEvent()
     data class ToolFinished(val sessionId: String, val toolExecution: ToolExecution) : HerdrServerEvent()
@@ -276,6 +277,11 @@ class HerdrWebSocketClient(
                     "stream_chunk", "chunk", "content_chunk" -> {
                         val chunk = json.get("chunk")?.asString ?: json.get("content")?.asString ?: json.get("text")?.asString ?: ""
                         _events.emit(HerdrServerEvent.StreamChunk(sessionId, chunk))
+                    }
+                    "stream_turn_update", "turn_update", "streaming_update" -> {
+                        val content = json.get("content")?.asString ?: json.get("text")?.asString ?: ""
+                        val isComplete = json.get("is_complete")?.asBoolean ?: false
+                        _events.emit(HerdrServerEvent.StreamTurnUpdate(sessionId, content, isComplete))
                     }
                     "agent_status", "status" -> {
                         val statusStr = json.get("status")?.asString ?: "ONLINE"

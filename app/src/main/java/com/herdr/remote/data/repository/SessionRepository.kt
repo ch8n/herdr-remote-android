@@ -205,52 +205,54 @@ class SessionRepository(
         }
     }
 
-    fun appendStreamChunkToLastAgentMessage(sessionId: String, chunk: String) {
+    fun updateLiveStreamTurn(sessionId: String, content: String, isComplete: Boolean = false) {
         val currentMap = _messagesMap.value.toMutableMap()
         val list = currentMap[sessionId] ?: emptyList()
         val lastMsg = list.lastOrNull()
+        val targetStatus = if (isComplete) MessageStatus.SENT else MessageStatus.STREAMING
 
-        if (lastMsg != null && lastMsg.sender == MessageSender.AGENT && lastMsg.status == MessageStatus.STREAMING) {
-            // Append to the active streaming bubble in the current turn
-            val updatedMsg = lastMsg.copy(content = lastMsg.content + chunk)
+        if (lastMsg != null && lastMsg.sender == MessageSender.AGENT) {
+            // Update current turn's agent bubble in place with live streaming text
+            val updatedMsg = lastMsg.copy(
+                content = content,
+                status = targetStatus
+            )
             val updatedList = list.toMutableList()
             updatedList[updatedList.size - 1] = updatedMsg
             currentMap[sessionId] = updatedList
             _messagesMap.value = currentMap
         } else {
-            // Spawn a brand new streaming agent bubble after the user message
+            // User message was the last one -> create new agent bubble for this turn
             val newAgentMsg = Message(
                 id = UUID.randomUUID().toString(),
                 sessionId = sessionId,
                 sender = MessageSender.AGENT,
-                content = chunk,
-                status = MessageStatus.STREAMING
+                content = content,
+                status = targetStatus
             )
             currentMap[sessionId] = list + newAgentMsg
             _messagesMap.value = currentMap
         }
     }
 
-    fun addOrCompleteAgentMessage(message: Message) {
+    fun appendStreamChunkToLastAgentMessage(sessionId: String, chunk: String) {
         val currentMap = _messagesMap.value.toMutableMap()
-        val list = currentMap[message.sessionId] ?: emptyList()
+        val list = currentMap[sessionId] ?: emptyList()
         val lastMsg = list.lastOrNull()
 
         if (lastMsg != null && lastMsg.sender == MessageSender.AGENT && lastMsg.status == MessageStatus.STREAMING) {
-            // Finalize the active streaming bubble for this turn
-            val finalized = lastMsg.copy(
-                content = if (message.content.isNotBlank()) message.content else lastMsg.content,
-                thought = message.thought ?: lastMsg.thought,
-                status = MessageStatus.SENT
-            )
+            val updatedMsg = lastMsg.copy(content = lastMsg.content + chunk)
             val updatedList = list.toMutableList()
-            updatedList[updatedList.size - 1] = finalized
-            currentMap[message.sessionId] = updatedList
+            updatedList[updatedList.size - 1] = updatedMsg
+            currentMap[sessionId] = updatedList
             _messagesMap.value = currentMap
         } else {
-            // Spawn a new agent message bubble
-            addMessage(message)
+            updateLiveStreamTurn(sessionId, chunk, isComplete = false)
         }
+    }
+
+    fun addOrCompleteAgentMessage(message: Message) {
+        updateLiveStreamTurn(message.sessionId, message.content, isComplete = true)
     }
 
     fun clearSessionMessages(sessionId: String) {

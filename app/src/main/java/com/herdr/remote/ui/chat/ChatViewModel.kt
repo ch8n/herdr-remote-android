@@ -169,7 +169,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         sessionRepository.syncSessionHistory(event.sessionId, event.messages)
                     }
                     is HerdrServerEvent.StreamChunk -> {
-                        sessionRepository.appendStreamChunkToLastAgentMessage(event.sessionId, event.chunk)
+                        sessionRepository.updateLiveStreamTurn(event.sessionId, event.chunk, isComplete = false)
+                    }
+                    is HerdrServerEvent.StreamTurnUpdate -> {
+                        sessionRepository.updateLiveStreamTurn(event.sessionId, event.content, event.isComplete)
                     }
                     is HerdrServerEvent.AgentStatusChanged -> {
                         sessionRepository.updateSessionStatus(event.sessionId, event.status, event.detail)
@@ -426,11 +429,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         )
         sessionRepository.addMessage(userMessage)
 
-        // 2. Clear input and attachments
+        // 2. Immediately add pending agent bubble for this new turn
+        val pendingAgentMessage = Message(
+            id = java.util.UUID.randomUUID().toString(),
+            sessionId = currentSession.id,
+            sender = MessageSender.AGENT,
+            content = "",
+            status = MessageStatus.STREAMING
+        )
+        sessionRepository.addMessage(pendingAgentMessage)
+        sessionRepository.updateSessionStatus(currentSession.id, AgentConnectionStatus.STREAMING, "Processing prompt...")
+
+        // 3. Clear input and attachments
         _inputText.value = ""
         _pendingAttachments.value = emptyList()
 
-        // 3. Dispatch to connected Herdr daemon or simulator
+        // 4. Dispatch to connected Herdr daemon or simulator
         if (wsClient.connectionStatus.value == AgentConnectionStatus.ONLINE) {
             wsClient.sendMessage(currentSession.id, trimmed, attachmentsToSend)
         } else {
