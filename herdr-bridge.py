@@ -6,12 +6,14 @@ Features:
 - Submits chat prompts directly with Enter / Run into agent panes
 - Real-time live polling (400ms) to stream terminal character/line changes directly to Android
 - Real-time tab sync when new tabs open or close on desktop
+- Clean ANSI & duplicate box-drawing horizontal lines filtering
 """
 
 import asyncio
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -38,6 +40,34 @@ def query_herdr_socket(method, params=None):
     except Exception as e:
         return {"error": str(e)}
 
+def clean_terminal_buffer(raw_text):
+    """
+    Cleans raw terminal buffer by stripping ANSI codes and deduplicating repetitive box borders.
+    """
+    if not raw_text:
+        return ""
+    
+    # Strip ANSI escape sequences
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    text = ansi_escape.sub('', raw_text)
+    
+    lines = text.splitlines()
+    cleaned = []
+    prev_was_hr = False
+    
+    for line in lines:
+        stripped = line.strip()
+        is_hr = bool(stripped) and all(c in '─━═-_~' for c in stripped) and len(stripped) >= 3
+        if is_hr:
+            if not prev_was_hr:
+                cleaned.append("────────────────────────────────")
+                prev_was_hr = True
+        else:
+            prev_was_hr = False
+            cleaned.append(line)
+            
+    return "\n".join(cleaned)
+
 def read_pane_terminal(pane_id):
     try:
         res = subprocess.run(
@@ -47,7 +77,8 @@ def read_pane_terminal(pane_id):
             timeout=2.0
         )
         if res.returncode == 0 and res.stdout:
-            return res.stdout.strip()
+            cleaned = clean_terminal_buffer(res.stdout.strip())
+            return cleaned
     except Exception as e:
         pass
     return ""
@@ -119,7 +150,7 @@ def get_synced_sessions_payload():
         
         title = f"{agent_name.upper()} • {project_name}" if project_name else f"{agent_name.upper()} (Tab {label})"
         role = f"Herdr Agent in {project_name or cwd}" if cwd else "Herdr Agent"
-        status = "ONLINE" if tab.get("agent_status") in ("idle", "running", "thinking") else "ONLINE"
+        status = "ONLINE"
         
         sessions_list.append({
             "id": tab_id,
@@ -142,9 +173,6 @@ def get_synced_sessions_payload():
     }
 
 async def live_terminal_watcher(websocket, client_ip):
-    """
-    Background loop that continuously polls Herdr terminal state and streams real-time updates to client.
-    """
     last_tab_hash = ""
     last_pane_hashes = {}
     
@@ -170,7 +198,6 @@ async def live_terminal_watcher(websocket, client_ip):
                 if not output:
                     continue
                 
-                # Check if changed
                 out_hash = hashlib.md5(output.encode("utf-8")).hexdigest()
                 if last_pane_hashes.get(tab_id) != out_hash:
                     last_pane_hashes[tab_id] = out_hash
@@ -254,12 +281,9 @@ async def handle_client(websocket):
                         "detail": "Executing prompt in Herdr terminal..."
                     }))
                     
-                    # Submit and press Enter
                     submit_prompt_to_pane(pane_id, content)
-                    
                     await asyncio.sleep(0.6)
                     
-                    # Read updated terminal output
                     updated_output = read_pane_terminal(pane_id)
                     tail_output = "\n".join(updated_output.splitlines()[-35:]) if updated_output else "Prompt submitted."
                     

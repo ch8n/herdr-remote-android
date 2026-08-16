@@ -704,6 +704,133 @@ fun ToolExecutionCard(tool: ToolExecution) {
     }
 }
 
+sealed class ContentBlock {
+    data class TextBlock(val content: String) : ContentBlock()
+    data class CodeBlock(val language: String, val code: String) : ContentBlock()
+}
+
+fun parseContentBlocks(rawText: String): List<ContentBlock> {
+    val blocks = mutableListOf<ContentBlock>()
+    val codeFenceRegex = Regex("```([a-zA-Z0-9_-]*)\\n?([\\s\\S]*?)```", RegexOption.MULTILINE)
+    var lastIndex = 0
+
+    val matches = codeFenceRegex.findAll(rawText).toList()
+    if (matches.isEmpty()) {
+        return listOf(ContentBlock.TextBlock(rawText))
+    }
+
+    for (match in matches) {
+        val matchStart = match.range.first
+        val matchEnd = match.range.last + 1
+
+        if (matchStart > lastIndex) {
+            val textPart = rawText.substring(lastIndex, matchStart).trim()
+            if (textPart.isNotEmpty()) {
+                blocks.add(ContentBlock.TextBlock(textPart))
+            }
+        }
+
+        val lang = match.groupValues[1].ifBlank { "terminal" }
+        val codeContent = match.groupValues[2].trim()
+        blocks.add(ContentBlock.CodeBlock(language = lang, code = codeContent))
+        lastIndex = matchEnd
+    }
+
+    if (lastIndex < rawText.length) {
+        val remaining = rawText.substring(lastIndex).trim()
+        if (remaining.isNotEmpty()) {
+            blocks.add(ContentBlock.TextBlock(remaining))
+        }
+    }
+
+    return blocks
+}
+
+@Composable
+fun CodeOrTerminalCard(language: String, code: String) {
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
+
+    val isTerminal = language.equals("terminal", ignoreCase = true) || language.equals("bash", ignoreCase = true) || language.equals("sh", ignoreCase = true)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isTerminal) Color(0xFF090D16) else CodeBackground)
+            .border(1.dp, if (isTerminal) AccentCyan.copy(alpha = 0.3f) else CodeBorder, RoundedCornerShape(10.dp))
+    ) {
+        Column {
+            // Header Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (isTerminal) Color(0xFF0E1726) else SurfaceElevated)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Icon(
+                        imageVector = if (isTerminal) Icons.Default.Terminal else Icons.Default.Code,
+                        contentDescription = "Code type",
+                        tint = if (isTerminal) AccentCyan else AccentViolet,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = if (isTerminal) "💻 TERMINAL" else "⚡ ${language.uppercase()}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.5.sp
+                        ),
+                        color = if (isTerminal) AccentCyan else AccentViolet
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
+                            copied = true
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(
+                        imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                        contentDescription = "Copy",
+                        tint = if (copied) AccentEmerald else TextMuted,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = if (copied) "COPIED" else "COPY",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp, fontWeight = FontWeight.Bold),
+                        color = if (copied) AccentEmerald else TextMuted
+                    )
+                }
+            }
+
+            // Monospace code content
+            Box(modifier = Modifier.padding(10.dp)) {
+                Text(
+                    text = code,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    ),
+                    color = if (isTerminal) Color(0xFF93C5FD) else TextHighlight
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun MarkdownMessageText(
     text: String,
@@ -721,40 +848,55 @@ fun MarkdownMessageText(
         label = "cursorAlpha"
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (isRawMode) {
-            // Raw Markdown Monospace Block
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(CodeBackground)
-                    .border(1.dp, CodeBorder, RoundedCornerShape(8.dp))
-                    .padding(10.dp)
-            ) {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.5.sp,
-                        lineHeight = 19.sp
-                    ),
-                    color = TextHighlight
-                )
-            }
-        } else {
-            // Rendered Markdown View using compose-markdown
-            MarkdownText(
-                markdown = text,
-                color = TextPrimary,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                    color = TextPrimary
+    if (isRawMode) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(CodeBackground)
+                .border(1.dp, CodeBorder, RoundedCornerShape(8.dp))
+                .padding(10.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
                 ),
-                linkColor = AccentCyan,
-                modifier = Modifier.fillMaxWidth()
+                color = TextHighlight
             )
+        }
+        return
+    }
+
+    val blocks = remember(text) { parseContentBlocks(text) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        blocks.forEach { block ->
+            when (block) {
+                is ContentBlock.CodeBlock -> {
+                    CodeOrTerminalCard(
+                        language = block.language,
+                        code = block.code
+                    )
+                }
+                is ContentBlock.TextBlock -> {
+                    if (block.content.isNotBlank()) {
+                        MarkdownText(
+                            markdown = block.content,
+                            color = TextPrimary,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                color = TextPrimary
+                            ),
+                            linkColor = AccentCyan,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
         }
 
         if (isStreaming) {
