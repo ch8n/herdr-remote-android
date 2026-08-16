@@ -719,7 +719,7 @@ fun cleanDividerLines(text: String): String {
         val isDivider = trimmed.length >= 3 && trimmed.all { it == '─' || it == '━' || it == '═' || it == '-' || it == '_' || it == '=' || it == '~' || it == ' ' }
         if (isDivider) {
             if (!prevWasDivider) {
-                cleaned.add("───")
+                cleaned.add("\n---\n")
                 prevWasDivider = true
             }
         } else {
@@ -727,7 +727,10 @@ fun cleanDividerLines(text: String): String {
             cleaned.add(line)
         }
     }
-    return cleaned.joinToString("\n")
+    val result = cleaned.joinToString("\n")
+    return result
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
 }
 
 fun parseContentBlocks(rawText: String): List<ContentBlock> {

@@ -65,17 +65,19 @@ def clean_terminal_buffer(raw_text):
         if l.startswith("● [") and "running" in l:
             continue
         
-        # Collapse and shorten horizontal rule lines / box drawing dividers
+        # Collapse and convert horizontal rule lines into standard Markdown separator ---
         is_divider = bool(l) and (all(c in '─━═-_~=─ ' for c in l) and len(l) >= 3)
         if is_divider:
             if not prev_was_divider:
-                lines.append("───")
+                lines.append("\n---\n")
                 prev_was_divider = True
         else:
             prev_was_divider = False
             lines.append(line)
         
-    return "\n".join(lines)
+    combined = "\n".join(lines)
+    combined = re.sub(r'\n{3,}', '\n\n', combined).strip()
+    return combined
 
 def read_pane_terminal(pane_id, lines=800):
     try:
