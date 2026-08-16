@@ -86,6 +86,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _previewImageUrl = MutableStateFlow<String?>(null)
     val previewImageUrl: StateFlow<String?> = _previewImageUrl.asStateFlow()
 
+    private val _isSupportDialogOpen = MutableStateFlow(settingsRepository.shouldShowSupportDialog())
+    val isSupportDialogOpen: StateFlow<Boolean> = _isSupportDialogOpen.asStateFlow()
+
+    fun dismissSupportDialog(dontShowFor7Days: Boolean) {
+        settingsRepository.dismissSupportDialog(dontShowFor7Days)
+        _isSupportDialogOpen.value = false
+    }
+
+    fun openSupportDialog() {
+        _isSupportDialogOpen.value = true
+    }
+
     private var activeSimulationJob: Job? = null
 
     init {

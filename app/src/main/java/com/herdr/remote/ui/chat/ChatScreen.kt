@@ -88,6 +88,7 @@ import com.herdr.remote.ui.components.ImagePreviewDialog
 import com.herdr.remote.ui.components.NewSessionDialog
 import com.herdr.remote.ui.components.RephraseComparisonDialog
 import com.herdr.remote.ui.components.SessionTabsBar
+import com.herdr.remote.ui.components.SupportDeveloperDialog
 import com.herdr.remote.ui.components.SettingsScreen
 import com.herdr.remote.ui.components.TopAgentHeader
 import com.herdr.remote.ui.components.VoiceRecordingOverlay
@@ -132,6 +133,7 @@ fun ChatScreen(
     val isNewSessionDialogOpen by viewModel.isNewSessionDialogOpen.collectAsState()
     val isAttachmentSheetOpen by viewModel.isAttachmentSheetOpen.collectAsState()
     val previewImageUrl by viewModel.previewImageUrl.collectAsState()
+    val isSupportDialogOpen by viewModel.isSupportDialogOpen.collectAsState()
 
     val isRecording = speechState is SpeechState.Listening || speechState is SpeechState.Initializing || isRephrasing
 
@@ -727,6 +729,15 @@ fun ChatScreen(
         ImagePreviewDialog(
             imageUrl = url,
             onDismiss = { viewModel.setPreviewImage(null) }
+        )
+    }
+
+    // Buy Me a Coffee & AI Course Support Popup
+    if (isSupportDialogOpen) {
+        SupportDeveloperDialog(
+            onDismiss = { dontShowFor7Days ->
+                viewModel.dismissSupportDialog(dontShowFor7Days)
+            }
         )
     }
 }

@@ -81,6 +81,22 @@ class SettingsRepository(context: Context) {
         saveLastActiveSession(sessionId, "")
     }
 
+    fun shouldShowSupportDialog(): Boolean {
+        val dismissedUntil = prefs.getLong(KEY_SUPPORT_DIALOG_DISMISSED_UNTIL, 0L)
+        return System.currentTimeMillis() >= dismissedUntil
+    }
+
+    fun dismissSupportDialog(dontShowFor7Days: Boolean) {
+        val editor = prefs.edit()
+        if (dontShowFor7Days) {
+            val sevenDaysMillis = 7L * 24 * 60 * 60 * 1000L
+            editor.putLong(KEY_SUPPORT_DIALOG_DISMISSED_UNTIL, System.currentTimeMillis() + sevenDaysMillis)
+        } else {
+            editor.remove(KEY_SUPPORT_DIALOG_DISMISSED_UNTIL)
+        }
+        editor.apply()
+    }
+
     companion object {
         private const val KEY_OPENROUTER_API_KEY = "openrouter_api_key"
         private const val KEY_OPENROUTER_MODEL = "openrouter_model"
@@ -92,5 +108,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_SPEECH_LANGUAGE = "speech_language"
         private const val KEY_LAST_ACTIVE_SESSION = "last_active_session_id"
         private const val KEY_LAST_ACTIVE_TITLE = "last_active_session_title"
+        private const val KEY_SUPPORT_DIALOG_DISMISSED_UNTIL = "support_dialog_dismissed_until"
     }
 }
