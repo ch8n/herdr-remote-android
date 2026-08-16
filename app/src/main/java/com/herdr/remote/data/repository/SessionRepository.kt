@@ -185,8 +185,15 @@ How can I assist your workflow today?
 
     fun addMessage(message: Message) {
         val currentMap = _messagesMap.value.toMutableMap()
-        val list = (currentMap[message.sessionId] ?: emptyList()) + message
-        currentMap[message.sessionId] = list
+        val list = currentMap[message.sessionId] ?: emptyList()
+        val existingIndex = list.indexOfFirst { it.id == message.id }
+        if (existingIndex >= 0) {
+            val updated = list.toMutableList()
+            updated[existingIndex] = message
+            currentMap[message.sessionId] = updated
+        } else {
+            currentMap[message.sessionId] = list + message
+        }
         _messagesMap.value = currentMap
     }
 

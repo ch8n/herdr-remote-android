@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
-Herdr Remote WebSocket Bridge & Execution Engine (Enhanced)
-Bridges ~/.config/herdr/herdr.sock and Herdr CLI to a WebSocket server on port 8765.
-Supports multi-tab sync, reading all terminal pane buffers, and bi-directional prompt execution.
+Herdr Remote WebSocket Bridge & Real-Time Streaming Daemon
+Bridges ~/.config/herdr/herdr.sock to a WebSocket server on port 8765.
+Features:
+- Submits chat prompts directly with Enter / Run into agent panes
+- Real-time live polling (400ms) to stream terminal character/line changes directly to Android
+- Real-time tab sync when new tabs open or close on desktop
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
 import subprocess
 import sys
+import time
 import websockets
 
 HERDR_SOCK_PATH = os.path.expanduser("~/.config/herdr/herdr.sock")
@@ -34,50 +39,62 @@ def query_herdr_socket(method, params=None):
         return {"error": str(e)}
 
 def read_pane_terminal(pane_id):
-    """
-    Reads terminal output from a pane using 'herdr pane read' (works for all shells and agent panes).
-    """
     try:
         res = subprocess.run(
             ["/Users/chetan/.local/bin/herdr", "pane", "read", pane_id],
             capture_output=True,
             text=True,
-            timeout=3.0
+            timeout=2.0
         )
         if res.returncode == 0 and res.stdout:
             return res.stdout.strip()
     except Exception as e:
-        print(f"[HerdrBridge] Error reading pane {pane_id}: {e}")
+        pass
     return ""
 
-def send_prompt_to_pane(pane_id, prompt_text):
+def submit_prompt_to_pane(pane_id, prompt_text):
     """
-    Sends input to a pane. First tries 'herdr agent prompt', then falls back to 'herdr pane send-text'.
+    Submits prompt into pane terminal and presses Enter to execute.
     """
-    # 1. Try agent prompt
+    print(f"[HerdrBridge] Submitting prompt to pane {pane_id}: {prompt_text}")
+    
+    # 1. Try herdr agent prompt
     try:
         res = subprocess.run(
             ["/Users/chetan/.local/bin/herdr", "agent", "prompt", pane_id, prompt_text],
             capture_output=True,
             text=True,
-            timeout=4.0
+            timeout=3.0
         )
         if res.returncode == 0:
+            print("[HerdrBridge] agent prompt succeeded")
             return True
     except Exception:
         pass
-    
-    # 2. Fallback to pane send-text
+
+    # 2. Try herdr pane run (which sends text AND Enter)
     try:
         res = subprocess.run(
-            ["/Users/chetan/.local/bin/herdr", "pane", "send-text", pane_id, prompt_text + "\n"],
+            ["/Users/chetan/.local/bin/herdr", "pane", "run", pane_id, prompt_text],
             capture_output=True,
             text=True,
-            timeout=4.0
+            timeout=3.0
         )
-        return res.returncode == 0
+        if res.returncode == 0:
+            print("[HerdrBridge] pane run succeeded")
+            return True
+    except Exception:
+        pass
+
+    # 3. Fallback to pane send-text + send-keys Enter
+    try:
+        subprocess.run(["/Users/chetan/.local/bin/herdr", "pane", "send-text", pane_id, prompt_text], capture_output=True, text=True, timeout=2.0)
+        time.sleep(0.05)
+        subprocess.run(["/Users/chetan/.local/bin/herdr", "pane", "send-keys", pane_id, "Enter"], capture_output=True, text=True, timeout=2.0)
+        print("[HerdrBridge] pane send-text + Enter executed")
+        return True
     except Exception as e:
-        print(f"[HerdrBridge] Error sending text to pane {pane_id}: {e}")
+        print(f"[HerdrBridge] Error submitting prompt: {e}")
         return False
 
 def get_synced_sessions_payload():
@@ -101,7 +118,7 @@ def get_synced_sessions_payload():
         project_name = os.path.basename(cwd) if cwd else ""
         
         title = f"{agent_name.upper()} • {project_name}" if project_name else f"{agent_name.upper()} (Tab {label})"
-        role = f"Herdr Workspace Agent ({project_name or cwd})" if cwd else "Herdr Agent"
+        role = f"Herdr Agent in {project_name or cwd}" if cwd else "Herdr Agent"
         status = "ONLINE" if tab.get("agent_status") in ("idle", "running", "thinking") else "ONLINE"
         
         sessions_list.append({
@@ -124,17 +141,50 @@ def get_synced_sessions_payload():
         "count": len(sessions_list)
     }
 
-async def stream_tab_history(websocket, tab_id, pane_id):
-    output = read_pane_terminal(pane_id)
-    if output:
-        clean_output = "\n".join(output.splitlines()[-45:])
-        payload = {
-            "type": "message_complete",
-            "session_id": tab_id,
-            "id": f"msg_init_{tab_id}",
-            "content": f"```terminal\n{clean_output}\n```"
-        }
-        await websocket.send(json.dumps(payload))
+async def live_terminal_watcher(websocket, client_ip):
+    """
+    Background loop that continuously polls Herdr terminal state and streams real-time updates to client.
+    """
+    last_tab_hash = ""
+    last_pane_hashes = {}
+    
+    try:
+        while True:
+            await asyncio.sleep(0.4)
+            
+            # 1. Check if tabs changed
+            payload = get_synced_sessions_payload()
+            sessions = payload.get("sessions", [])
+            tab_ids = ",".join(s["id"] for s in sessions)
+            
+            if tab_ids != last_tab_hash:
+                last_tab_hash = tab_ids
+                await websocket.send(json.dumps(payload))
+            
+            # 2. Check each pane for terminal output changes
+            for session in sessions:
+                tab_id = session.get("id")
+                pane_id = session.get("pane_id") or tab_id
+                
+                output = read_pane_terminal(pane_id)
+                if not output:
+                    continue
+                
+                # Check if changed
+                out_hash = hashlib.md5(output.encode("utf-8")).hexdigest()
+                if last_pane_hashes.get(tab_id) != out_hash:
+                    last_pane_hashes[tab_id] = out_hash
+                    
+                    clean_output = "\n".join(output.splitlines()[-45:])
+                    msg_payload = {
+                        "type": "message_complete",
+                        "session_id": tab_id,
+                        "id": f"msg_terminal_{tab_id}",
+                        "content": f"```terminal\n{clean_output}\n```"
+                    }
+                    await websocket.send(json.dumps(msg_payload))
+    except (asyncio.CancelledError, websockets.exceptions.ConnectionClosed):
+        pass
 
 async def handle_client(websocket):
     client_ip = websocket.remote_address
@@ -146,12 +196,23 @@ async def handle_client(websocket):
     print(f"[HerdrBridge] Dispatched {len(sessions)} desktop tabs to client")
     await websocket.send(json.dumps(initial_payload))
     
-    # 2. For EVERY tab, read pane output via 'herdr pane read' and send content
+    # 2. Initial terminal stream for all tabs
     for session in sessions:
         tab_id = session.get("id")
         pane_id = session.get("pane_id") or tab_id
-        await stream_tab_history(websocket, tab_id, pane_id)
-        await asyncio.sleep(0.05)
+        output = read_pane_terminal(pane_id)
+        if output:
+            clean_output = "\n".join(output.splitlines()[-45:])
+            await websocket.send(json.dumps({
+                "type": "message_complete",
+                "session_id": tab_id,
+                "id": f"msg_terminal_{tab_id}",
+                "content": f"```terminal\n{clean_output}\n```"
+            }))
+            await asyncio.sleep(0.02)
+    
+    # 3. Start real-time background watcher task
+    watcher_task = asyncio.create_task(live_terminal_watcher(websocket, client_ip))
     
     try:
         async for message in websocket:
@@ -163,28 +224,28 @@ async def handle_client(websocket):
                 if msg_type in ("get_sessions", "list_sessions", "sync_tabs", "get_tabs", "client_hello"):
                     payload = get_synced_sessions_payload()
                     await websocket.send(json.dumps(payload))
-                    for session in payload.get("sessions", []):
-                        tab_id = session.get("id")
-                        pane_id = session.get("pane_id") or tab_id
-                        await stream_tab_history(websocket, tab_id, pane_id)
                 elif msg_type in ("get_tab_content", "select_tab", "focus_tab"):
                     target_id = data.get("session_id") or data.get("tab_id") or ""
-                    # Find pane
                     payload = get_synced_sessions_payload()
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == target_id), {})
                     pane_id = session.get("pane_id") or target_id
                     if pane_id:
-                        await stream_tab_history(websocket, target_id, pane_id)
+                        output = read_pane_terminal(pane_id)
+                        if output:
+                            clean_output = "\n".join(output.splitlines()[-45:])
+                            await websocket.send(json.dumps({
+                                "type": "message_complete",
+                                "session_id": target_id,
+                                "id": f"msg_terminal_{target_id}",
+                                "content": f"```terminal\n{clean_output}\n```"
+                            }))
                 elif msg_type == "user_message":
                     session_id = data.get("session_id", "")
                     content = data.get("content", "")
                     
-                    # Find target pane
                     payload = get_synced_sessions_payload()
                     session = next((s for s in payload.get("sessions", []) if s.get("id") == session_id), {})
                     pane_id = session.get("pane_id") or session_id
-                    
-                    print(f"[HerdrBridge] Routing user prompt to pane {pane_id} (tab {session_id}): {content}")
                     
                     await websocket.send(json.dumps({
                         "type": "agent_status",
@@ -193,14 +254,14 @@ async def handle_client(websocket):
                         "detail": "Executing prompt in Herdr terminal..."
                     }))
                     
-                    # Submit to desktop herdr pane/agent
-                    send_prompt_to_pane(pane_id, content)
+                    # Submit and press Enter
+                    submit_prompt_to_pane(pane_id, content)
                     
-                    await asyncio.sleep(1.2)
+                    await asyncio.sleep(0.6)
                     
                     # Read updated terminal output
                     updated_output = read_pane_terminal(pane_id)
-                    tail_output = "\n".join(updated_output.splitlines()[-30:]) if updated_output else "Dispatched to terminal."
+                    tail_output = "\n".join(updated_output.splitlines()[-35:]) if updated_output else "Prompt submitted."
                     
                     await websocket.send(json.dumps({
                         "type": "agent_status",
@@ -212,15 +273,18 @@ async def handle_client(websocket):
                     await websocket.send(json.dumps({
                         "type": "message_complete",
                         "session_id": session_id,
-                        "content": f"⚡ **Prompt dispatched to Herdr Agent**:\n\n```terminal\n{tail_output}\n```"
+                        "id": f"msg_terminal_{session_id}",
+                        "content": f"```terminal\n{tail_output}\n```"
                     }))
             except Exception as e:
                 print(f"[HerdrBridge] Error processing message: {e}")
     except websockets.exceptions.ConnectionClosed:
         print(f"[HerdrBridge] Client disconnected: {client_ip}")
+    finally:
+        watcher_task.cancel()
 
 async def main():
-    print(f"🚀 Starting Herdr WebSocket Bridge & Terminal Daemon on 0.0.0.0:{WS_PORT}...")
+    print(f"🚀 Starting Real-Time Herdr WebSocket Bridge & Watcher Daemon on 0.0.0.0:{WS_PORT}...")
     async with websockets.serve(handle_client, "0.0.0.0", WS_PORT):
         await asyncio.Future()
 
