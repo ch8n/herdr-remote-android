@@ -91,7 +91,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     init {
         observeSpeechState()
         observeWebSocketEvents()
+        observeWebSocketStatus()
         observeSettings()
+    }
+
+    private fun observeWebSocketStatus() {
+        viewModelScope.launch {
+            wsClient.connectionStatus.collect { status ->
+                val detail = when (status) {
+                    AgentConnectionStatus.ONLINE -> "Online • Herdr Node Ready"
+                    AgentConnectionStatus.CONNECTING -> "Connecting to node..."
+                    AgentConnectionStatus.OFFLINE -> "Offline • Disconnected"
+                    else -> "Online"
+                }
+                sessionRepository.updateAllSessionsStatus(status, detail)
+            }
+        }
     }
 
     private fun observeSettings() {
@@ -121,7 +136,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             wsClient.events.collect { event ->
                 when (event) {
                     is HerdrServerEvent.Connected -> {
+                        sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.ONLINE, "Online • Herdr Node Ready")
                         wsClient.requestActiveSessions()
+                    }
+                    is HerdrServerEvent.Disconnected -> {
+                        sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.OFFLINE, "Offline • Disconnected")
+                    }
+                    is HerdrServerEvent.Error -> {
+                        sessionRepository.updateAllSessionsStatus(AgentConnectionStatus.OFFLINE, "Error • ${event.message}")
                     }
                     is HerdrServerEvent.ActiveSessionsReceived -> {
                         sessionRepository.syncRemoteSessions(event.sessions)
@@ -149,7 +171,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     is HerdrServerEvent.ToolFinished -> {
                         // Tool finished
                     }
-                    else -> {}
                 }
             }
         }

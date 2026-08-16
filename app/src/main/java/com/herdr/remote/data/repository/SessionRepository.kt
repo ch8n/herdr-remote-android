@@ -109,6 +109,12 @@ class SessionRepository {
         }
     }
 
+    fun updateAllSessionsStatus(status: AgentConnectionStatus, detail: String) {
+        _sessions.value = _sessions.value.map { session ->
+            session.copy(status = status, statusDetail = detail)
+        }
+    }
+
     fun addMessage(message: Message) {
         val currentMap = _messagesMap.value.toMutableMap()
         val list = (currentMap[message.sessionId] ?: emptyList()) + message
