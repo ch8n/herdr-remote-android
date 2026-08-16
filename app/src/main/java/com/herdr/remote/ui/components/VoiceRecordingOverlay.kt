@@ -230,7 +230,7 @@ fun VoiceRecordingOverlay(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "AI Polish",
+                        text = "Stop & Polish",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = AccentViolet
                     )

@@ -686,14 +686,7 @@ fun ChatScreen(
                     isRephrasing = isRephrasing,
                     onCancel = { viewModel.cancelVoiceRecording() },
                     onStopAndRephrase = { viewModel.stopVoiceRecording(triggerRephrase = true) },
-                    onDirectSend = {
-                        val currentSpeech = speechState
-                        val raw = if (currentSpeech is SpeechState.Listening) currentSpeech.partialText else ""
-                        viewModel.cancelVoiceRecording()
-                        if (raw.isNotBlank()) {
-                            viewModel.sendUserMessage(content = raw)
-                        }
-                    }
+                    onDirectSend = { viewModel.directSendVoiceRecording() }
                 )
             }
         }

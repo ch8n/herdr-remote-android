@@ -322,12 +322,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopVoiceRecording(triggerRephrase: Boolean) {
-        val currentSpeech = speechState.value
-        val rawText = if (currentSpeech is SpeechState.Listening) currentSpeech.partialText else ""
-        speechHelper.stopListening()
+        val finalText = speechHelper.stopListening()
+        if (finalText.isNotBlank()) {
+            handleSpeechFinalText(finalText)
+        }
+    }
 
-        if (rawText.isNotBlank()) {
-            handleSpeechFinalText(rawText)
+    fun directSendVoiceRecording() {
+        val finalText = speechHelper.stopListening()
+        speechHelper.reset()
+        if (finalText.isNotBlank()) {
+            sendUserMessage(content = finalText, originalSpoken = finalText)
         }
     }
 
